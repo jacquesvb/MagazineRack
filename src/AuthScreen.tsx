@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, BookOpen, LoaderCircle, LockKeyhole, Mail, ShieldCheck, UserRound } from "lucide-react";
 import { useAuth } from "./auth";
+import ThemeToggle from "./ThemeToggle";
 
 type Mode = "sign-in" | "sign-up" | "forgot-password";
 
@@ -50,7 +51,7 @@ export default function AuthScreen() {
 
   return <main className="auth-screen">
     <section className="auth-card">
-      <div className="auth-brand"><div className="brand-mark"><BookOpen size={19} /></div><span>MAGAZINE RACK</span></div>
+      <div className="auth-topline"><div className="auth-brand"><div className="brand-mark"><BookOpen size={19} /></div><span>MAGAZINE RACK</span></div><ThemeToggle /></div>
       <div className="auth-heading"><h1>{title}</h1><p>{subtitle}</p></div>
 
       {!auth.recoveryMode && mode === "sign-in" && <div className="oauth-options">

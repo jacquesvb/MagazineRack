@@ -10,6 +10,7 @@ import { archiveDownloadUrl, imageFileToDataUrl, imageUrlToDataUrl, importArchiv
 import { isTauri } from "@tauri-apps/api/core";
 import { downloadPublicationPdf, removeOfflinePdf } from "./offline";
 import { useUIStore } from "./store";
+import ThemeToggle from "./ThemeToggle";
 import { AuthProvider, useAuth } from "./auth";
 import AuthScreen from "./AuthScreen";
 import type { Collection, Publication, PublicationDraft } from "./types";
@@ -19,7 +20,16 @@ const PdfReader = lazy(() => import("./PdfReader"));
 type Dialog = "new-collection" | "edit-collection" | "add-publication" | "edit-publication" | null;
 
 export default function App() {
-  return <AuthProvider><AppGate /></AuthProvider>;
+  return <AuthProvider><ThemeBridge><AppGate /></ThemeBridge></AuthProvider>;
+}
+
+function ThemeBridge({ children }: { children: React.ReactNode }) {
+  const themeMode = useUIStore((state) => state.themeMode);
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    document.documentElement.style.colorScheme = themeMode;
+  }, [themeMode]);
+  return children;
 }
 
 function AppGate() {
@@ -54,7 +64,7 @@ function AppGate() {
 
 function AccountSetupScreen({ onContinue }: { onContinue: () => void }) {
   return <main className="auth-screen"><section className="auth-card setup-card">
-    <div className="auth-brand"><div className="brand-mark"><BookOpen size={19} /></div><span>MAGAZINE RACK</span></div>
+    <div className="auth-topline"><div className="auth-brand"><div className="brand-mark"><BookOpen size={19} /></div><span>MAGAZINE RACK</span></div><ThemeToggle /></div>
     <div className="auth-heading"><h1>Accounts need a Supabase project</h1><p>Set up Supabase Auth and the catalog schema to enable accounts and cross-device sync.</p></div>
     <ol className="setup-steps"><li>Create a Supabase project.</li><li>Run <code>supabase/schema.sql</code> in the SQL editor.</li><li>Copy <code>.env.example</code> to <code>.env</code> and add the project URL and anon key.</li><li>Configure Google, Microsoft, email confirmation, and password reset redirects.</li></ol>
     <button className="button button-primary auth-submit" onClick={onContinue}>Continue with this device only</button>
@@ -330,7 +340,7 @@ function LibraryApp({ userId, username }: { userId: string | null; username: str
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><div className="local-badge"><span /> {userId ? `Signed in as ${username}` : "Stored on this device"}</div>{userId && <button className="sign-out-button" onClick={() => void auth.signOut().catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Could not sign out."))}>Sign out</button>}<button className="avatar-button" title={username || "Local profile"}>{(username || "J").charAt(0).toUpperCase()}</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><ThemeToggle /><div className="local-badge"><span /> {userId ? `Signed in as ${username}` : "Stored on this device"}</div>{userId && <button className="sign-out-button" onClick={() => void auth.signOut().catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Could not sign out."))}>Sign out</button>}<button className="avatar-button" title={username || "Local profile"}>{(username || "J").charAt(0).toUpperCase()}</button></div></header>
       <div className="content-wrap">
         <section className="page-intro">
           <div className="intro-copy"><div className="eyebrow"><span className="eyebrow-mark" /> YOUR READING ROOM</div><h1>{showCollections ? "Your collections" : activeCollection?.name || "All publications"}</h1><p>{showCollections ? "A set of shelves for every corner of your archive." : activeCollection?.description || "A thoughtfully arranged home for the things you love to read."}</p></div>

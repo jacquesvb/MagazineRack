@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="40" y="40" width="944" height="944" rx="210" fill="#314e43"/>
+  <rect x="40" y="40" width="944" height="944" rx="210" fill="#1e4a72"/>
   <path d="M255 254c93-39 178-30 257 20v507c-79-50-164-59-257-20V254Z" fill="#f4f1e7"/>
-  <path d="M769 254c-93-39-178-30-257 20v507c79-50 164-59 257-20V254Z" fill="#e1e6d9"/>
-  <path d="M512 274v507" stroke="#9baF9b" stroke-width="14"/>
-  <path d="M303 346c56-16 112-15 168 5M303 407c56-16 112-15 168 5M303 468c56-16 112-15 168 5M553 351c56-20 112-21 168-5M553 412c56-20 112-21 168-5M553 473c56-20 112-21 168-5" fill="none" stroke="#8a9c89" stroke-linecap="round" stroke-width="13"/>
-  <path d="M303 610c56-17 112-14 168 7M553 617c56-21 112-24 168-7" fill="none" stroke="#c17c5b" stroke-linecap="round" stroke-width="18"/>
+  <path d="M769 254c-93-39-178-30-257 20v507c79-50 164-59 257-20V254Z" fill="#e1e8f0"/>
+  <path d="M512 274v507" stroke="#9aaec3" stroke-width="14"/>
+  <path d="M303 346c56-16 112-15 168 5M303 407c56-16 112-15 168 5M303 468c56-16 112-15 168 5M553 351c56-20 112-21 168-5M553 412c56-20 112-21 168-5M553 473c56-20 112-21 168-5" fill="none" stroke="#718aa3" stroke-linecap="round" stroke-width="13"/>
+  <path d="M303 610c56-17 112-14 168 7M553 617c56-21 112-24 168-7" fill="none" stroke="#3f78a8" stroke-linecap="round" stroke-width="18"/>
 </svg>

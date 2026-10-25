@@ -9,6 +9,7 @@ A desktop catalog for organizing and reading PDF publications hosted on Internet
 - Import Archive.org metadata from an item page or a direct PDF URL.
 - Edit publication details and use a custom JPG, PNG, GIF, or WebP cover image or the built-in fallback artwork.
 - Browse the catalog in tile or list view, search, and sort publications.
+- Switch between light and dark appearance; the preference is saved on the device.
 - Read PDFs in an in-app PDF.js reader and save them to the app's local data directory for offline reading.
 - Sign in with Google, Microsoft, or email/password; usernames are profile names, and forgotten passwords can be reset by email.
 - Keep account catalogs private and synced across devices, with SQLite as a per-account local cache.
