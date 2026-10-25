@@ -6,7 +6,7 @@ import {
   Search, Settings2, Sparkles, Trash2, Upload, X,
 } from "lucide-react";
 import { deleteCollection, deletePublication, getCollections, getPublications, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath } from "./db";
-import { archiveDownloadUrl, imageFileToDataUrl, importArchivePdf, type ArchiveFile } from "./archive";
+import { archiveDownloadUrl, imageFileToDataUrl, imageUrlToDataUrl, importArchivePdf, type ArchiveFile } from "./archive";
 import { isTauri } from "@tauri-apps/api/core";
 import { downloadPublicationPdf, removeOfflinePdf } from "./offline";
 import { useUIStore } from "./store";
@@ -31,19 +31,56 @@ function Modal({ title, subtitle, onClose, children, wide = false }: { title: st
   </div>;
 }
 
+function droppedImageUrls(dataTransfer: DataTransfer): string[] {
+  const uriList = dataTransfer.getData("text/uri-list").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+  const mozUrl = dataTransfer.getData("text/x-moz-url").split(/\r?\n/)[0]?.trim();
+  const html = dataTransfer.getData("text/html");
+  const htmlUrls: string[] = [];
+  if (html) {
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const base = uriList[0] || window.location.href;
+    for (const image of document.querySelectorAll("img")) {
+      const source = image.getAttribute("src") || image.getAttribute("srcset")?.split(",")[0]?.trim().split(/\s+/)[0];
+      if (!source) continue;
+      try { htmlUrls.push(new URL(source, base).toString()); } catch { /* Ignore non-URL image sources. */ }
+    }
+  }
+  const textUrls = dataTransfer.getData("text/plain").match(/https?:\/\/[^\s<>"']+/g) || [];
+  return [...new Set([...uriList, ...(mozUrl ? [mozUrl] : []), ...htmlUrls, ...textUrls])];
+}
+
 function ImagePicker({ value, onChange }: { value: string | null; onChange: (value: string | null) => void }) {
   const [error, setError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const [loadingUrl, setLoadingUrl] = useState(false);
   const choose = async (file?: File) => {
     if (!file) return;
     try { setError(""); onChange(await imageFileToDataUrl(file)); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not use this image."); }
   };
+  const handleDrop = async (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setDragOver(false);
+    setError("");
+    const file = Array.from(event.dataTransfer.files).find((candidate) => candidate.type.startsWith("image/") || candidate.name.toLowerCase().endsWith(".gif"));
+    if (file) { await choose(file); return; }
+    const urls = droppedImageUrls(event.dataTransfer);
+    if (!urls.length) { setError("Drop an image file or drag an image from a secure webpage."); return; }
+    setLoadingUrl(true);
+    let lastError: unknown;
+    for (const url of urls) {
+      try { onChange(await imageUrlToDataUrl(url)); setLoadingUrl(false); return; }
+      catch (reason) { lastError = reason; }
+    }
+    setError(lastError instanceof Error ? lastError.message : "Could not fetch the dropped image.");
+    setLoadingUrl(false);
+  };
   return <div className="image-picker-row">
-    <label className="image-picker">
-      {value ? <img src={value} alt="Selected thumbnail" /> : <span className="image-picker-empty"><Upload size={18} /><small>Choose image</small></span>}
+    <label className={`image-picker ${dragOver ? "drop-active" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDragOver(true); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOver(false); }} onDrop={(event) => void handleDrop(event)} aria-label="Drop an image here or choose a file">
+      {loadingUrl ? <span className="image-picker-empty"><LoaderCircle className="spin" size={18} /><small>Fetching…</small></span> : value ? <img src={value} alt="Selected thumbnail" /> : <span className="image-picker-empty"><Upload size={18} /><small>Choose image</small></span>}
       <input type="file" accept="image/*,.gif" onChange={(event) => void choose(event.target.files?.[0])} />
     </label>
-    <div className="image-picker-copy"><strong>Thumbnail image</strong><span>JPG, PNG, GIF, or WebP · max 4 MB</span>{value && <button type="button" className="text-button" onClick={() => onChange(null)}>Remove image</button>}{error && <em className="field-error">{error}</em>}</div>
+    <div className="image-picker-copy"><strong>Thumbnail image</strong><span>Drop an HTTPS image from a webpage or choose a file.</span><span>JPG, PNG, GIF, or WebP · max 4 MB</span>{value && <button type="button" className="text-button" onClick={() => onChange(null)}>Remove image</button>}{error && <em className="field-error">{error}</em>}</div>
   </div>;
 }
 

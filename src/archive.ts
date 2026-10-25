@@ -75,6 +75,46 @@ export async function downloadArchivePdf(url: string): Promise<ArrayBuffer> {
   return response.arrayBuffer();
 }
 
+function sniffImageType(bytes: Uint8Array): string | null {
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return "image/gif";
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
+  if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 &&
+    (new TextDecoder().decode(bytes.subarray(8, 12)) === "avif" || new TextDecoder().decode(bytes.subarray(8, 12)) === "avis")) return "image/avif";
+  return null;
+}
+
+export async function imageUrlToDataUrl(rawUrl: string): Promise<string> {
+  let url: URL;
+  try { url = new URL(rawUrl.trim()); }
+  catch { throw new Error("The dropped image does not contain a valid URL."); }
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const isIpAddress = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":");
+  if (url.protocol !== "https:" || url.username || url.password || isIpAddress || !hostname.includes(".") || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".lan") || hostname.endsWith(".internal") || hostname.endsWith(".home.arpa")) {
+    throw new Error("Only public HTTPS image links can be imported. Use the file picker for this image.");
+  }
+
+  const response = isTauri()
+    ? await tauriFetch(url.toString(), { connectTimeout: 20_000, maxRedirections: 4 })
+    : await fetch(url.toString());
+  if (!response.ok) throw new Error(`The image site returned ${response.status}.`);
+  let mimeType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() || "";
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > 4 * 1024 * 1024) throw new Error("Image must be smaller than 4 MB.");
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!bytes.length || bytes.length > 4 * 1024 * 1024) throw new Error("Image must be between 1 byte and 4 MB.");
+  if (!mimeType.startsWith("image/")) mimeType = sniffImageType(bytes) || "";
+  if (!mimeType.startsWith("image/")) throw new Error("The dropped link did not return a supported image.");
+
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, Math.min(index + 0x8000, bytes.length)));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
 export function imageFileToDataUrl(file: File): Promise<string> {
   const isGif = file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif");
   if (!file.type.startsWith("image/") && !isGif) return Promise.reject(new Error("Choose an image file."));
