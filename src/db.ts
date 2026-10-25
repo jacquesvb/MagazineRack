@@ -360,7 +360,7 @@ type CloudPublication = Omit<Publication, "local_pdf_path" | "subjects" | "metad
 };
 type CloudLink = { collection_id: string; publication_id: string; position: number; added_at: string };
 
-export async function syncUserCatalog(userId: string): Promise<void> {
+export async function syncUserCatalog(userId: string): Promise<boolean> {
   const client = cloud();
   await clearLegacyCatalogForAccount(userId);
 
@@ -373,6 +373,7 @@ export async function syncUserCatalog(userId: string): Promise<void> {
   if (publicationResult.error) throw new Error(publicationResult.error.message);
   if (linkResult.error) throw new Error(linkResult.error.message);
   await applyCloudSnapshot(userId, collectionResult.data as CloudCollection[], publicationResult.data as CloudPublication[], linkResult.data as CloudLink[]);
+  return true;
 }
 
 async function applyCloudSnapshot(userId: string, collections: CloudCollection[], publications: CloudPublication[], links: CloudLink[]): Promise<void> {

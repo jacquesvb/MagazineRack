@@ -45,7 +45,9 @@ function AppGate() {
   if (auth.loading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Checking your account…</span></div>;
   if (!auth.user) return <AuthScreen />;
   if (syncQuery.isLoading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Syncing your library…</span></div>;
-  if (syncQuery.isError && !useCachedCatalog) return <div className="auth-loading"><div className="sync-error-card"><h2>Couldn’t sync your library</h2><p>{syncQuery.error.message}</p><button className="button button-primary" onClick={() => void syncQuery.refetch()}>Try again</button><button className="text-button" onClick={() => setUseCachedCatalog(true)}>Open cached library while offline</button></div></div>;
+  // A failed background refresh must not unmount LibraryApp: doing so resets its
+  // selected collection. Only block on sync errors before the first successful sync.
+  if (syncQuery.isError && syncQuery.dataUpdatedAt === 0 && !useCachedCatalog) return <div className="auth-loading"><div className="sync-error-card"><h2>Couldn’t sync your library</h2><p>{syncQuery.error.message}</p><button className="button button-primary" onClick={() => void syncQuery.refetch()}>Try again</button><button className="text-button" onClick={() => setUseCachedCatalog(true)}>Open cached library while offline</button></div></div>;
   const username = String(auth.user.user_metadata.username || auth.user.user_metadata.name || auth.user.email || "Reader");
   return <LibraryApp userId={auth.user.id} username={username} />;
 }
@@ -219,8 +221,9 @@ function LibraryApp({ userId, username }: { userId: string | null; username: str
   const auth = useAuth();
   const queryClient = useQueryClient();
   const { viewMode, setViewMode } = useUIStore();
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
-  const [showCollections, setShowCollections] = useState(false);
+  const preferenceKey = userId || "local";
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(() => localStorage.getItem(`magazine-rack-active-collection:${preferenceKey}`) || null);
+  const [showCollections, setShowCollections] = useState(() => localStorage.getItem(`magazine-rack-show-collections:${preferenceKey}`) === "true");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [editingCollection, setEditingCollection] = useState<Collection | undefined>();
   const [editingPublication, setEditingPublication] = useState<Publication | undefined>();
@@ -253,6 +256,17 @@ function LibraryApp({ userId, username }: { userId: string | null; username: str
   const publicationsQuery = useQuery({ queryKey: ["publications", selectedCollectionId, userId], queryFn: () => getPublications(selectedCollectionId, userId) });
   const collections = collectionsQuery.data || [];
   const activeCollection = collections.find((collection) => collection.id === selectedCollectionId);
+
+  useEffect(() => {
+    localStorage.setItem(`magazine-rack-active-collection:${preferenceKey}`, selectedCollectionId || "");
+    localStorage.setItem(`magazine-rack-show-collections:${preferenceKey}`, String(showCollections));
+  }, [preferenceKey, selectedCollectionId, showCollections]);
+
+  useEffect(() => {
+    if (selectedCollectionId && collectionsQuery.isSuccess && !collections.some((collection) => collection.id === selectedCollectionId)) {
+      setSelectedCollectionId(null);
+    }
+  }, [collections, collectionsQuery.isSuccess, selectedCollectionId]);
   const publications = useMemo(() => {
     const filtered = (publicationsQuery.data || []).filter((publication) => {
       const term = search.toLowerCase().trim();
