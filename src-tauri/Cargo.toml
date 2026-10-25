@@ -17,4 +17,8 @@ tauri = { version = "2", features = [] }
 serde_json = "1"
 tauri-plugin-http = "2"
 tauri-plugin-fs = "2"
+# Pinned to the v2 fix for rust-ini 0.21.3's expanded ParseOption struct.
+tauri-plugin-deep-link = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "c75459d8996b8e7097d556de4e9948bd730f6e9c" }
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }

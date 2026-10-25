@@ -10,7 +10,8 @@ A desktop catalog for organizing and reading PDF publications hosted on Internet
 - Edit publication details and use a custom JPG, PNG, GIF, or WebP cover image or the built-in fallback artwork.
 - Browse the catalog in tile or list view, search, and sort publications.
 - Read PDFs in an in-app PDF.js reader and save them to the app's local data directory for offline reading.
-- Persist the catalog in SQLite in Tauri; the browser preview uses local storage as a development fallback.
+- Sign in with Google, Microsoft, or email/password; usernames are profile names, and forgotten passwords can be reset by email.
+- Keep account catalogs private and synced across devices, with SQLite as a per-account local cache.
 
 ## Requirements
 
@@ -24,13 +25,25 @@ npm install
 npm run tauri dev
 ```
 
+### Configure accounts and cloud sync
+
+Account sign-in uses Supabase Auth and the Supabase database. To enable it:
+
+1. Create a Supabase project and run [`supabase/schema.sql`](supabase/schema.sql) in its SQL Editor. The schema enables row-level security so each account can only access its own catalog.
+2. Copy `.env.example` to `.env` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from the project's API settings. The anon/publishable key is intended for client apps; **never put a service-role key in the desktop app**.
+3. In Supabase Auth, enable email/password and configure Google and Azure (Microsoft) OAuth providers with their client IDs/secrets. Set each provider's callback URL to the Supabase callback URL shown in the provider settings.
+4. Add `magazinerack://auth/callback` to Supabase's allowed redirect URLs. Configure email confirmation and password recovery emails to use the provided redirect URL. Configure SMTP for production email delivery.
+5. Restart `npm run tauri dev` after changing `.env`.
+
+The app opens OAuth in the system browser and uses the registered `magazinerack://` deep link to return. Without Supabase environment values, the app offers local-only mode. Account catalogs use separate local databases; the pre-account guest catalog and its prior copy in the first account are cleared during sync, while account-created records are preserved. Catalog metadata and thumbnails sync through Supabase, while downloaded PDFs remain on each device.
+
 To run the frontend in a browser for UI development only:
 
 ```sh
 npm run dev
 ```
 
-Browser preview data is saved in that browser's local storage; offline PDF downloads are available in the packaged Tauri desktop app. Use the download icon on a publication tile or row to save it. The desktop app keeps its catalog in SQLite and downloaded PDFs in the app-local data directory. The reader automatically uses a saved copy, and removing that copy does not remove the Archive.org publication from your catalog.
+Browser preview data is saved in that browser's local storage; offline PDF downloads are available in the packaged Tauri desktop app. Use the download icon on a publication tile or row to save it. The desktop app keeps a per-account catalog cache in SQLite and downloaded PDFs in the app-local data directory. The reader automatically uses a saved copy, and removing that copy does not remove the Archive.org publication from your catalog.
 
 ## Archive.org metadata
 

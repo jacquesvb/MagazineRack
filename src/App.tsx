@@ -5,16 +5,60 @@ import {
   FolderOpen, Grid2X2, LayoutList, LibraryBig, LoaderCircle, Plus,
   Search, Settings2, Sparkles, Trash2, Upload, X,
 } from "lucide-react";
-import { deleteCollection, deletePublication, getCollections, getPublications, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath } from "./db";
+import { deleteCollection, deletePublication, getCollections, getPublications, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath, syncUserCatalog } from "./db";
 import { archiveDownloadUrl, imageFileToDataUrl, imageUrlToDataUrl, importArchivePdf, type ArchiveFile } from "./archive";
 import { isTauri } from "@tauri-apps/api/core";
 import { downloadPublicationPdf, removeOfflinePdf } from "./offline";
 import { useUIStore } from "./store";
+import { AuthProvider, useAuth } from "./auth";
+import AuthScreen from "./AuthScreen";
 import type { Collection, Publication, PublicationDraft } from "./types";
 
 const PdfReader = lazy(() => import("./PdfReader"));
 
 type Dialog = "new-collection" | "edit-collection" | "add-publication" | "edit-publication" | null;
+
+export default function App() {
+  return <AuthProvider><AppGate /></AuthProvider>;
+}
+
+function AppGate() {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const [localMode, setLocalMode] = useState(false);
+  const [useCachedCatalog, setUseCachedCatalog] = useState(false);
+  const syncQuery = useQuery({
+    queryKey: ["account-catalog-sync", auth.user?.id],
+    queryFn: () => syncUserCatalog(auth.user!.id),
+    enabled: auth.configured && !!auth.user,
+    retry: 1,
+    refetchInterval: auth.user ? 60_000 : false,
+  });
+
+  useEffect(() => {
+    if (!auth.user || !syncQuery.isSuccess) return;
+    void queryClient.invalidateQueries({ queryKey: ["collections", auth.user.id] });
+    void queryClient.invalidateQueries({ queryKey: ["publications"] });
+  }, [auth.user, queryClient, syncQuery.dataUpdatedAt, syncQuery.isSuccess]);
+
+  if (!auth.configured) return localMode ? <LibraryApp userId={null} username={null} /> : <AccountSetupScreen onContinue={() => setLocalMode(true)} />;
+  if (auth.loading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Checking your account…</span></div>;
+  if (!auth.user) return <AuthScreen />;
+  if (syncQuery.isLoading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Syncing your library…</span></div>;
+  if (syncQuery.isError && !useCachedCatalog) return <div className="auth-loading"><div className="sync-error-card"><h2>Couldn’t sync your library</h2><p>{syncQuery.error.message}</p><button className="button button-primary" onClick={() => void syncQuery.refetch()}>Try again</button><button className="text-button" onClick={() => setUseCachedCatalog(true)}>Open cached library while offline</button></div></div>;
+  const username = String(auth.user.user_metadata.username || auth.user.user_metadata.name || auth.user.email || "Reader");
+  return <LibraryApp userId={auth.user.id} username={username} />;
+}
+
+function AccountSetupScreen({ onContinue }: { onContinue: () => void }) {
+  return <main className="auth-screen"><section className="auth-card setup-card">
+    <div className="auth-brand"><div className="brand-mark"><BookOpen size={19} /></div><span>MAGAZINE RACK</span></div>
+    <div className="auth-heading"><h1>Accounts need a Supabase project</h1><p>Set up Supabase Auth and the catalog schema to enable accounts and cross-device sync.</p></div>
+    <ol className="setup-steps"><li>Create a Supabase project.</li><li>Run <code>supabase/schema.sql</code> in the SQL editor.</li><li>Copy <code>.env.example</code> to <code>.env</code> and add the project URL and anon key.</li><li>Configure Google, Microsoft, email confirmation, and password reset redirects.</li></ol>
+    <button className="button button-primary auth-submit" onClick={onContinue}>Continue with this device only</button>
+    <p className="auth-privacy">Local mode keeps using this device’s SQLite catalog. Accounts stay unavailable until Supabase is configured.</p>
+  </section></main>;
+}
 
 function Cover({ image, title, className = "" }: { image?: string | null; title: string; className?: string }) {
   return <div className={`cover ${className}`}>
@@ -171,7 +215,8 @@ function PublicationCard({ publication, isList, onOpen, onEdit, onDelete, delete
   </article>;
 }
 
-export default function App() {
+function LibraryApp({ userId, username }: { userId: string | null; username: string | null }) {
+  const auth = useAuth();
   const queryClient = useQueryClient();
   const { viewMode, setViewMode } = useUIStore();
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
@@ -204,8 +249,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onShortcut);
   }, []);
 
-  const collectionsQuery = useQuery({ queryKey: ["collections"], queryFn: getCollections });
-  const publicationsQuery = useQuery({ queryKey: ["publications", selectedCollectionId], queryFn: () => getPublications(selectedCollectionId) });
+  const collectionsQuery = useQuery({ queryKey: ["collections", userId], queryFn: () => getCollections(userId) });
+  const publicationsQuery = useQuery({ queryKey: ["publications", selectedCollectionId, userId], queryFn: () => getPublications(selectedCollectionId, userId) });
   const collections = collectionsQuery.data || [];
   const activeCollection = collections.find((collection) => collection.id === selectedCollectionId);
   const publications = useMemo(() => {
@@ -223,13 +268,13 @@ export default function App() {
 
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["collections"] }); void queryClient.invalidateQueries({ queryKey: ["publications"] }); };
   const showMutationError = (error: Error) => setNotice(`Could not save changes: ${error.message}`);
-  const collectionSave = useMutation({ mutationFn: saveCollection, onSuccess: () => { refresh(); setDialog(null); setEditingCollection(undefined); }, onError: showMutationError });
-  const collectionDelete = useMutation({ mutationFn: deleteCollection, onSuccess: (_, id) => { if (selectedCollectionId === id) setSelectedCollectionId(null); refresh(); setNotice("Collection deleted."); }, onError: showMutationError });
-  const publicationSave = useMutation({ mutationFn: ({ draft, id, collectionId }: { draft: PublicationDraft; id?: string; collectionId: string | null }) => savePublication(draft, collectionId, id), onSuccess: () => { refresh(); setDialog(null); setEditingPublication(undefined); setNotice("Publication saved to your rack."); }, onError: showMutationError });
+  const collectionSave = useMutation({ mutationFn: (data: Parameters<typeof saveCollection>[0]) => saveCollection(data, userId), onSuccess: () => { refresh(); setDialog(null); setEditingCollection(undefined); }, onError: showMutationError });
+  const collectionDelete = useMutation({ mutationFn: (id: string) => deleteCollection(id, userId), onSuccess: (_, id) => { if (selectedCollectionId === id) setSelectedCollectionId(null); refresh(); setNotice("Collection deleted."); }, onError: showMutationError });
+  const publicationSave = useMutation({ mutationFn: ({ draft, id, collectionId }: { draft: PublicationDraft; id?: string; collectionId: string | null }) => savePublication(draft, collectionId, id, userId), onSuccess: () => { refresh(); setDialog(null); setEditingPublication(undefined); setNotice("Publication saved to your rack."); }, onError: showMutationError });
   const publicationDelete = useMutation({
     mutationFn: async ({ publicationId, collectionId, localPdfPath }: { publicationId: string; collectionId: string | null; localPdfPath: string | null }) => {
-      if (collectionId) return removePublicationFromCollection(publicationId, collectionId);
-      await deletePublication(publicationId);
+      if (collectionId) return removePublicationFromCollection(publicationId, collectionId, userId);
+      await deletePublication(publicationId, userId);
       if (localPdfPath) await removeOfflinePdf(localPdfPath).catch(() => undefined);
     },
     onSuccess: (_, variables) => { refresh(); setNotice(variables.collectionId ? "Publication removed from this collection." : "Publication deleted."); },
@@ -239,11 +284,11 @@ export default function App() {
     mutationFn: async ({ publication, remove }: { publication: Publication; remove: boolean }) => {
       if (remove) {
         if (publication.local_pdf_path) await removeOfflinePdf(publication.local_pdf_path);
-        await setLocalPdfPath(publication.id, null);
+        await setLocalPdfPath(publication.id, null, userId);
         return;
       }
       const path = await downloadPublicationPdf(publication);
-      try { await setLocalPdfPath(publication.id, path); }
+      try { await setLocalPdfPath(publication.id, path, userId); }
       catch (error) { await removeOfflinePdf(path); throw error; }
     },
     onSuccess: (_, variables) => { refresh(); setNotice(variables.remove ? "Offline copy removed." : "Publication saved for offline reading."); },
@@ -267,11 +312,11 @@ export default function App() {
         {!collections.length && <p className="sidebar-empty">Collections you create will show up here.</p>}
       </nav>
       <button className="new-collection-link" onClick={() => openCollectionDialog()}><Plus size={15} /> New collection</button>
-      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v0.8</span></div></div>
+      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>{userId ? "Synced to your account." : "Cataloged locally on this device."}</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v0.8</span></div></div>
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><div className="local-badge"><span /> Stored on this device</div><button className="avatar-button" title="Local profile">J</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><div className="local-badge"><span /> {userId ? `Signed in as ${username}` : "Stored on this device"}</div>{userId && <button className="sign-out-button" onClick={() => void auth.signOut().catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Could not sign out."))}>Sign out</button>}<button className="avatar-button" title={username || "Local profile"}>{(username || "J").charAt(0).toUpperCase()}</button></div></header>
       <div className="content-wrap">
         <section className="page-intro">
           <div className="intro-copy"><div className="eyebrow"><span className="eyebrow-mark" /> YOUR READING ROOM</div><h1>{showCollections ? "Your collections" : activeCollection?.name || "All publications"}</h1><p>{showCollections ? "A set of shelves for every corner of your archive." : activeCollection?.description || "A thoughtfully arranged home for the things you love to read."}</p></div>

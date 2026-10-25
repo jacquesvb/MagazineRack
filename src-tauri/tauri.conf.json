@@ -21,12 +21,17 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost https://archive.org https://*.archive.org data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420 https://archive.org https://*.archive.org; worker-src 'self' blob:; object-src 'none'"
+      "csp": "default-src 'self' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost https://archive.org https://*.archive.org data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420 https://archive.org https://*.archive.org https://*.supabase.co wss://*.supabase.co; worker-src 'self' blob:; object-src 'none'"
     }
   },
   "plugins": {
     "http": {
       "scopeRedirects": true
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["magazinerack"]
+      }
     }
   },
   "bundle": {
