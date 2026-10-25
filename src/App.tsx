@@ -5,7 +5,7 @@ import {
   FolderOpen, Grid2X2, LayoutList, LibraryBig, LoaderCircle, Plus,
   Search, Settings2, Sparkles, Trash2, Upload, X,
 } from "lucide-react";
-import { deleteCollection, deletePublication, getCollections, getPublications, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath, syncUserCatalog } from "./db";
+import { deleteCollection, deletePublication, getCollections, getPublications, initializeLocalCatalog, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath, syncUserCatalog } from "./db";
 import { archiveDownloadUrl, imageFileToDataUrl, imageUrlToDataUrl, importArchivePdf, type ArchiveFile } from "./archive";
 import { isTauri } from "@tauri-apps/api/core";
 import { downloadPublicationPdf, removeOfflinePdf } from "./offline";
@@ -35,15 +35,26 @@ function ThemeBridge({ children }: { children: React.ReactNode }) {
 function AppGate() {
   const auth = useAuth();
   const queryClient = useQueryClient();
-  const [localMode, setLocalMode] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
   const [useCachedCatalog, setUseCachedCatalog] = useState(false);
+  const localCatalogQuery = useQuery({
+    queryKey: ["local-catalog-initialization"],
+    queryFn: initializeLocalCatalog,
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: 1,
+  });
   const syncQuery = useQuery({
     queryKey: ["account-catalog-sync", auth.user?.id],
     queryFn: () => syncUserCatalog(auth.user!.id),
-    enabled: auth.configured && !!auth.user,
+    enabled: auth.configured && !!auth.user && localCatalogQuery.isSuccess,
     retry: 1,
     refetchInterval: auth.user ? 60_000 : false,
   });
+
+  useEffect(() => {
+    if (auth.user) setShowAuth(false);
+  }, [auth.user?.id]);
 
   useEffect(() => {
     if (!auth.user || !syncQuery.isSuccess) return;
@@ -51,9 +62,14 @@ function AppGate() {
     void queryClient.invalidateQueries({ queryKey: ["publications"] });
   }, [auth.user, queryClient, syncQuery.dataUpdatedAt, syncQuery.isSuccess]);
 
-  if (!auth.configured) return localMode ? <LibraryApp userId={null} username={null} /> : <AccountSetupScreen onContinue={() => setLocalMode(true)} />;
-  if (auth.loading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Checking your account…</span></div>;
-  if (!auth.user) return <AuthScreen />;
+  if (localCatalogQuery.isLoading || auth.loading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Preparing your library…</span></div>;
+  if (localCatalogQuery.isError) return <div className="auth-loading"><div className="sync-error-card"><h2>Couldn’t open your local library</h2><p>{localCatalogQuery.error.message}</p><button className="button button-primary" onClick={() => void localCatalogQuery.refetch()}>Try again</button></div></div>;
+  if (auth.recoveryMode) return <AuthScreen onCancel={() => { void auth.signOut(); }} />;
+  if (!auth.user) {
+    if (showSetup) return <AccountSetupScreen onContinue={() => setShowSetup(false)} onBack={() => setShowSetup(false)} />;
+    if (showAuth && auth.configured) return <AuthScreen onCancel={() => setShowAuth(false)} />;
+    return <LibraryApp userId={null} username={null} signInLabel={auth.configured ? "Sign in to sync" : "Set up sync"} onSignIn={() => auth.configured ? setShowAuth(true) : setShowSetup(true)} />;
+  }
   if (syncQuery.isLoading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Syncing your library…</span></div>;
   // A failed background refresh must not unmount LibraryApp: doing so resets its
   // selected collection. Only block on sync errors before the first successful sync.
@@ -62,12 +78,13 @@ function AppGate() {
   return <LibraryApp userId={auth.user.id} username={username} />;
 }
 
-function AccountSetupScreen({ onContinue }: { onContinue: () => void }) {
+function AccountSetupScreen({ onContinue, onBack }: { onContinue: () => void; onBack: () => void }) {
   return <main className="auth-screen"><section className="auth-card setup-card">
     <div className="auth-topline"><div className="auth-brand"><div className="brand-mark"><BookOpen size={19} /></div><span>MAGAZINE RACK</span></div><ThemeToggle /></div>
     <div className="auth-heading"><h1>Accounts need a Supabase project</h1><p>Set up Supabase Auth and the catalog schema to enable accounts and cross-device sync.</p></div>
     <ol className="setup-steps"><li>Create a Supabase project.</li><li>Run <code>supabase/schema.sql</code> in the SQL editor.</li><li>Copy <code>.env.example</code> to <code>.env</code> and add the project URL and anon key.</li><li>Configure Google, Microsoft, email confirmation, and password reset redirects.</li></ol>
     <button className="button button-primary auth-submit" onClick={onContinue}>Continue with this device only</button>
+    <button className="text-button setup-back" onClick={onBack}>Back to local library</button>
     <p className="auth-privacy">Local mode keeps using this device’s SQLite catalog. Accounts stay unavailable until Supabase is configured.</p>
   </section></main>;
 }
@@ -227,7 +244,7 @@ function PublicationCard({ publication, isList, onOpen, onEdit, onDelete, delete
   </article>;
 }
 
-function LibraryApp({ userId, username }: { userId: string | null; username: string | null }) {
+function LibraryApp({ userId, username, onSignIn, signInLabel }: { userId: string | null; username: string | null; onSignIn?: () => void; signInLabel?: string }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const { viewMode, setViewMode } = useUIStore();
@@ -340,7 +357,7 @@ function LibraryApp({ userId, username }: { userId: string | null; username: str
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><ThemeToggle /><div className="local-badge"><span /> {userId ? `Signed in as ${username}` : "Stored on this device"}</div>{userId && <button className="sign-out-button" onClick={() => void auth.signOut().catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Could not sign out."))}>Sign out</button>}<button className="avatar-button" title={username || "Local profile"}>{(username || "J").charAt(0).toUpperCase()}</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><ThemeToggle />{!userId && onSignIn && <button className="sign-in-sync-button" onClick={onSignIn}>{signInLabel || "Sign in to sync"}</button>}<div className="local-badge"><span /> {userId ? `Signed in as ${username}` : "Stored on this device"}</div>{userId && <button className="sign-out-button" onClick={() => void auth.signOut().catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Could not sign out."))}>Sign out</button>}<button className="avatar-button" title={username || "Local profile"}>{(username || "J").charAt(0).toUpperCase()}</button></div></header>
       <div className="content-wrap">
         <section className="page-intro">
           <div className="intro-copy"><div className="eyebrow"><span className="eyebrow-mark" /> YOUR READING ROOM</div><h1>{showCollections ? "Your collections" : activeCollection?.name || "All publications"}</h1><p>{showCollections ? "A set of shelves for every corner of your archive." : activeCollection?.description || "A thoughtfully arranged home for the things you love to read."}</p></div>

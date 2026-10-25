@@ -11,8 +11,9 @@ A desktop catalog for organizing and reading PDF publications hosted on Internet
 - Browse the catalog in tile or list view, search, and sort publications.
 - Switch between light and dark appearance; the preference is saved on the device.
 - Read PDFs in an in-app PDF.js reader and save them to the app's local data directory for offline reading.
+- Use the local catalog by default, with optional account sign-in to sync across devices.
 - Sign in with Google, Microsoft, or email/password; usernames are profile names, and forgotten passwords can be reset by email.
-- Keep account catalogs private and synced across devices, with SQLite as a per-account local cache.
+- Keep synced account catalogs private, with SQLite as a per-account local cache.
 
 ## Requirements
 
@@ -36,7 +37,7 @@ Account sign-in uses Supabase Auth and the Supabase database. To enable it:
 4. Add `magazinerack://auth/callback` to Supabase's allowed redirect URLs. Configure email confirmation and password recovery emails to use the provided redirect URL. Configure SMTP for production email delivery.
 5. Restart `npm run tauri dev` after changing `.env`.
 
-The app opens OAuth in the system browser and uses the registered `magazinerack://` deep link to return. Without Supabase environment values, the app offers local-only mode. Account catalogs use separate local databases; the pre-account guest catalog and its prior copy in the first account are cleared during sync, while account-created records are preserved. Catalog metadata and thumbnails sync through Supabase, while downloaded PDFs remain on each device.
+The local library opens by default. Choose **Sign in to sync** when you want to link this device's catalog to an account. The app opens OAuth in the system browser and uses the registered `magazinerack://` deep link to return. Supabase environment values are required for account sync; without them the app remains local-only. Synced account catalogs use separate local databases. The old pre-account catalog is cleared once; the current local catalog is linked to the first account that opts into sync. Catalog metadata and thumbnails sync through Supabase, while downloaded PDFs remain on each device. Signing out returns to the local catalog.
 
 To run the frontend in a browser for UI development only:
 

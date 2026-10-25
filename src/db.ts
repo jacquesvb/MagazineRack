@@ -280,8 +280,46 @@ export async function getPublicationCollectionIds(publicationId: string, userId?
 
 const LEGACY_IDS_KEY = "magazine-rack-legacy-catalog-ids-v1";
 const LEGACY_GUEST_CLEARED_KEY = "magazine-rack-legacy-guest-cleared-v1";
+const LOCAL_CATALOG_LINKED_KEY = "magazine-rack-local-catalog-linked-to";
 type LegacyIds = { collections: string[]; publications: string[] };
 const chunks = <T,>(items: T[], size = 100): T[][] => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
+type LocalCatalogLinkState = {
+  userId: string;
+  collectionIds: string[];
+  publicationIds: string[];
+  linkKeys: string[];
+  collectionUpdatedAt: Record<string, string>;
+  publicationUpdatedAt: Record<string, string>;
+};
+
+function readLocalCatalogLinkState(): LocalCatalogLinkState | null {
+  const stored = localStorage.getItem(LOCAL_CATALOG_LINKED_KEY);
+  if (!stored) return null;
+  try {
+    const parsed = JSON.parse(stored) as Partial<LocalCatalogLinkState>;
+    if (parsed.userId) return {
+      userId: parsed.userId,
+      collectionIds: parsed.collectionIds || [],
+      publicationIds: parsed.publicationIds || [],
+      linkKeys: parsed.linkKeys || [],
+      collectionUpdatedAt: parsed.collectionUpdatedAt || {},
+      publicationUpdatedAt: parsed.publicationUpdatedAt || {},
+    };
+  } catch { /* Older releases stored only the linked account ID. */ }
+  return {
+    userId: stored,
+    collectionIds: [],
+    publicationIds: [],
+    linkKeys: [],
+    collectionUpdatedAt: {},
+    publicationUpdatedAt: {},
+  };
+}
+
+function linkKey(collectionId: string, publicationId: string) { return `${collectionId}|${publicationId}`; }
+function timestampAfter(left: string, right: string | undefined) {
+  return !right || Date.parse(left) > Date.parse(right);
+}
 
 async function purgeLocalRecords(userId: string | null, legacyIds: LegacyIds, removePdfs: boolean): Promise<void> {
   if (!isTauri()) {
@@ -310,6 +348,27 @@ async function purgeLocalRecords(userId: string | null, legacyIds: LegacyIds, re
   }
 }
 
+export async function initializeLocalCatalog(): Promise<boolean> {
+  if (localStorage.getItem(LEGACY_GUEST_CLEARED_KEY) === "true") return true;
+  if (!localStorage.getItem(LEGACY_IDS_KEY)) {
+    const [collections, publications] = await Promise.all([getCollections(null), getPublications(null, null)]);
+    localStorage.setItem(LEGACY_IDS_KEY, JSON.stringify({
+      collections: collections.map((item) => item.id),
+      publications: publications.map((item) => item.id),
+    } satisfies LegacyIds));
+  }
+  const rawIds = localStorage.getItem(LEGACY_IDS_KEY) || "{}";
+  const parsed = JSON.parse(rawIds) as Partial<LegacyIds>;
+  const legacyIds: LegacyIds = {
+    collections: Array.isArray(parsed.collections) ? parsed.collections : [],
+    publications: Array.isArray(parsed.publications) ? parsed.publications : [],
+  };
+  const priorAccount = localStorage.getItem("magazine-rack-local-imported-to");
+  await purgeLocalRecords(null, legacyIds, !priorAccount);
+  localStorage.setItem(LEGACY_GUEST_CLEARED_KEY, "true");
+  return true;
+}
+
 async function clearLegacyCatalogForAccount(userId: string): Promise<void> {
   let legacyIds: LegacyIds;
   const savedIds = localStorage.getItem(LEGACY_IDS_KEY);
@@ -331,7 +390,7 @@ async function clearLegacyCatalogForAccount(userId: string): Promise<void> {
   // Earlier account builds copied the guest catalog into the first signed-in account
   // without changing its IDs. Remove only those legacy rows, never account-created rows.
   const legacyOwnerId = localStorage.getItem("magazine-rack-local-imported-to");
-  if (legacyOwnerId === userId && (legacyIds.collections.length || legacyIds.publications.length)) {
+  if (legacyOwnerId === userId) {
     const client = cloud();
     for (const ids of chunks(legacyIds.publications)) {
       const { error } = await client.from("publications").delete().eq("user_id", userId).in("id", ids);
@@ -354,6 +413,111 @@ async function clearLegacyCatalogForAccount(userId: string): Promise<void> {
   if (!legacyOwnerId || legacyOwnerId === userId) localStorage.removeItem(LEGACY_IDS_KEY);
 }
 
+async function syncLocalChangesToAccount(userId: string, state: LocalCatalogLinkState | null): Promise<void> {
+  if (state && state.userId !== userId) return;
+  const client = cloud();
+  const [collections, publications, remoteCollectionsResult, remotePublicationsResult] = await Promise.all([
+    getCollections(null),
+    getPublications(null, null),
+    client.from("collections").select("id,updated_at").eq("user_id", userId),
+    client.from("publications").select("id,updated_at").eq("user_id", userId),
+  ]);
+  if (remoteCollectionsResult.error) throw new Error(remoteCollectionsResult.error.message);
+  if (remotePublicationsResult.error) throw new Error(remotePublicationsResult.error.message);
+
+  const collectionUpdatedAt = new Map<string, string>((remoteCollectionsResult.data || []).map((item) => [item.id, item.updated_at]));
+  const publicationUpdatedAt = new Map<string, string>((remotePublicationsResult.data || []).map((item) => [item.id, item.updated_at]));
+  const collectionIds = new Set(collectionUpdatedAt.keys());
+  const publicationIds = new Set(publicationUpdatedAt.keys());
+  const knownCollectionIds = new Set(state?.collectionIds || []);
+  const knownPublicationIds = new Set(state?.publicationIds || []);
+
+  for (const collection of collections) {
+    const remoteUpdatedAt = collectionUpdatedAt.get(collection.id);
+    const baseline = state?.collectionUpdatedAt[collection.id];
+    const isNewLocalRecord = !knownCollectionIds.has(collection.id);
+    const changedLocally = Boolean(baseline && timestampAfter(collection.updated_at, baseline));
+    const shouldUpload = remoteUpdatedAt
+      ? (isNewLocalRecord || changedLocally) && timestampAfter(collection.updated_at, remoteUpdatedAt)
+      : isNewLocalRecord || changedLocally || !state;
+    if (shouldUpload) {
+      await saveCollection({ id: collection.id, name: collection.name, description: collection.description, thumbnail_data: collection.thumbnail_data }, userId);
+      collectionIds.add(collection.id);
+      collectionUpdatedAt.set(collection.id, collection.updated_at);
+    }
+  }
+  for (const id of state?.collectionIds || []) {
+    if (collections.some((collection) => collection.id === id) || !collectionIds.has(id)) continue;
+    const { error } = await client.from("collections").delete().eq("user_id", userId).eq("id", id);
+    if (error) throw new Error(error.message);
+    collectionIds.delete(id);
+    collectionUpdatedAt.delete(id);
+  }
+
+  for (const publication of publications) {
+    const remoteUpdatedAt = publicationUpdatedAt.get(publication.id);
+    const baseline = state?.publicationUpdatedAt[publication.id];
+    const isNewLocalRecord = !knownPublicationIds.has(publication.id);
+    const changedLocally = Boolean(baseline && timestampAfter(publication.updated_at, baseline));
+    const shouldUpload = remoteUpdatedAt
+      ? (isNewLocalRecord || changedLocally) && timestampAfter(publication.updated_at, remoteUpdatedAt)
+      : isNewLocalRecord || changedLocally || !state;
+    if (shouldUpload) {
+      const draft: PublicationDraft = { ...publication, subjects: publication.subjects || [] };
+      const importedId = await savePublication(draft, null, publication.id, userId);
+      if (publication.local_pdf_path) await setLocalPdfPath(importedId, publication.local_pdf_path, userId);
+      publicationIds.add(publication.id);
+      publicationUpdatedAt.set(publication.id, publication.updated_at);
+    }
+  }
+  for (const id of state?.publicationIds || []) {
+    if (publications.some((publication) => publication.id === id) || !publicationIds.has(id)) continue;
+    const { error } = await client.from("publications").delete().eq("user_id", userId).eq("id", id);
+    if (error) throw new Error(error.message);
+    publicationIds.delete(id);
+    publicationUpdatedAt.delete(id);
+  }
+
+  const localLinks = new Set<string>();
+  for (const publication of publications) {
+    const collectionIds = await getPublicationCollectionIds(publication.id, null);
+    for (const collectionId of collectionIds) localLinks.add(linkKey(collectionId, publication.id));
+  }
+  const knownLinks = new Set(state?.linkKeys || []);
+  for (const key of localLinks) {
+    if (knownLinks.has(key)) continue;
+    const [collectionId, publicationId] = key.split("|");
+    if (!collectionIds.has(collectionId) || !publicationIds.has(publicationId)) continue;
+    const { error } = await client.from("collection_publications").upsert({
+      user_id: userId, collection_id: collectionId, publication_id: publicationId,
+    }, { onConflict: "user_id,collection_id,publication_id" });
+    if (error) throw new Error(error.message);
+  }
+  for (const key of knownLinks) {
+    if (localLinks.has(key)) continue;
+    const [collectionId, publicationId] = key.split("|");
+    const { error } = await client.from("collection_publications").delete().eq("user_id", userId).eq("collection_id", collectionId).eq("publication_id", publicationId);
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function saveLocalCatalogLinkState(userId: string): Promise<void> {
+  const [collections, publications] = await Promise.all([getCollections(null), getPublications(null, null)]);
+  const linkKeys: string[] = [];
+  for (const publication of publications) {
+    for (const collectionId of await getPublicationCollectionIds(publication.id, null)) linkKeys.push(linkKey(collectionId, publication.id));
+  }
+  const state: LocalCatalogLinkState = {
+    userId,
+    collectionIds: collections.map((collection) => collection.id),
+    publicationIds: publications.map((publication) => publication.id),
+    linkKeys,
+    collectionUpdatedAt: Object.fromEntries(collections.map((collection) => [collection.id, collection.updated_at])),
+    publicationUpdatedAt: Object.fromEntries(publications.map((publication) => [publication.id, publication.updated_at])),
+  };
+  localStorage.setItem(LOCAL_CATALOG_LINKED_KEY, JSON.stringify(state));
+}
+
 type CloudCollection = Collection & { user_id: string };
 type CloudPublication = Omit<Publication, "local_pdf_path" | "subjects" | "metadata_json" | "overrides_json"> & {
   user_id: string; subjects: string[]; metadata_json: unknown; overrides_json: unknown;
@@ -363,6 +527,7 @@ type CloudLink = { collection_id: string; publication_id: string; position: numb
 export async function syncUserCatalog(userId: string): Promise<boolean> {
   const client = cloud();
   await clearLegacyCatalogForAccount(userId);
+  await syncLocalChangesToAccount(userId, readLocalCatalogLinkState());
 
   const [collectionResult, publicationResult, linkResult] = await Promise.all([
     client.from("collections").select("*").eq("user_id", userId),
@@ -373,10 +538,19 @@ export async function syncUserCatalog(userId: string): Promise<boolean> {
   if (publicationResult.error) throw new Error(publicationResult.error.message);
   if (linkResult.error) throw new Error(linkResult.error.message);
   await applyCloudSnapshot(userId, collectionResult.data as CloudCollection[], publicationResult.data as CloudPublication[], linkResult.data as CloudLink[]);
+  const localLink = readLocalCatalogLinkState();
+  if (!localLink || localLink.userId === userId) {
+    const accountPdfs = new Map((await getPublications(null, userId))
+      .filter((publication) => publication.local_pdf_path)
+      .map((publication) => [publication.id, publication.local_pdf_path!]));
+    await applyCloudSnapshot(null, collectionResult.data as CloudCollection[], publicationResult.data as CloudPublication[], linkResult.data as CloudLink[]);
+    for (const [publicationId, path] of accountPdfs) await setLocalPdfPath(publicationId, path, null);
+    await saveLocalCatalogLinkState(userId);
+  }
   return true;
 }
 
-async function applyCloudSnapshot(userId: string, collections: CloudCollection[], publications: CloudPublication[], links: CloudLink[]): Promise<void> {
+async function applyCloudSnapshot(userId: string | null, collections: CloudCollection[], publications: CloudPublication[], links: CloudLink[]): Promise<void> {
   const publicationIds = new Set(publications.map((item) => item.id));
   const collectionIds = new Set(collections.map((item) => item.id));
   if (!isTauri()) {

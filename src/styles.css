@@ -69,6 +69,8 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .avatar-button { width: 27px; height: 27px; border: 1px solid #dfe4db; border-radius: 50%; background: #e9eee6; color: #46634e; font-size: 10px; font-weight: 700; }
 .sign-out-button { padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; color: #758078; font-size: 9px; cursor: pointer; }
 .sign-out-button:hover { background: #edf0e9; color: #304d3e; }
+.sign-in-sync-button { padding: 6px 9px; border: 1px solid #aeb9c6; border-radius: 5px; background: #fff; color: #1e4a72; font-size: 9px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.sign-in-sync-button:hover { background: #edf3f9; border-color: #8299b1; }
 .content-wrap { width: min(1180px, 100%); margin: 0 auto; padding: 41px 42px 25px; }
 .page-intro { display: flex; align-items: flex-end; justify-content: space-between; min-height: 108px; padding-bottom: 27px; }
 .eyebrow { display: flex; align-items: center; gap: 7px; color: #8b958a; font-size: 9px; font-weight: 700; letter-spacing: 1.25px; }
@@ -291,6 +293,8 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .auth-switch { min-height: 43px; display: flex; align-items: center; justify-content: center; margin-top: 16px; border-top: 1px solid #eceee8; color: #879087; font-size: 9px; }
 .auth-switch button { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: #58765e; font-size: inherit; font-weight: 600; cursor: pointer; }
 .auth-switch span button { margin-left: 3px; }
+.auth-local-back { display: block; margin: 0 auto 12px; padding: 4px 7px; border: 0; background: transparent; color: #285b8a; font-size: 9px; font-weight: 600; cursor: pointer; }
+.auth-local-back:hover { text-decoration: underline; }
 .auth-privacy { margin: 0; color: #a0a79f; text-align: center; font-size: 8px; line-height: 1.5; }
 .setup-steps { display: grid; gap: 11px; margin: 20px 0 23px; padding-left: 21px; color: #67746a; font-size: 10px; line-height: 1.5; }
 .setup-steps code { padding: 2px 4px; border-radius: 3px; background: #f0f2ed; color: #45564a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; }
@@ -328,6 +332,7 @@ button:disabled { cursor: not-allowed; opacity: .68; }
   .local-badge { font-size: 0; }
   .local-badge > span { width: 8px; height: 8px; }
   .sign-out-button { font-size: 8px; }
+  .sign-in-sync-button { padding: 5px 6px; font-size: 8px; }
   .content-wrap { padding: 25px 15px 18px; }
   .page-intro { min-height: 96px; align-items: flex-start; flex-direction: column; gap: 14px; padding-bottom: 20px; }
   .page-intro h1 { font-size: 29px; }
@@ -487,6 +492,8 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 :root[data-theme="dark"] .sign-out-button { color: #b8c5d2; }
 :root[data-theme="dark"] .local-badge > span { background: #68a4db; box-shadow: 0 0 0 3px #29465f; }
 :root[data-theme="dark"] .sign-out-button:hover { background: #263b4f; color: #f1f6fb; }
+:root[data-theme="dark"] .sign-in-sync-button { border-color: #53708c; background: #223548; color: #c8e2fa; }
+:root[data-theme="dark"] .sign-in-sync-button:hover { border-color: #7ea8ce; background: #2c4964; }
 :root[data-theme="dark"] .avatar-button { border-color: #4a6075; background: #263d53; color: #d9eafa; }
 :root[data-theme="dark"] .page-intro h1,
 :root[data-theme="dark"] .publication-info h3,
@@ -582,6 +589,7 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 :root[data-theme="dark"] .form-section-label a,
 :root[data-theme="dark"] .auth-forgot,
 :root[data-theme="dark"] .auth-switch button { color: #a9d0f3; }
+:root[data-theme="dark"] .auth-local-back { color: #a9d0f3; }
 :root[data-theme="dark"] .form-section-label i { background: #405366; }
 :root[data-theme="dark"] .import-box { border-color: #40576b; background: #202f3d; }
 :root[data-theme="dark"] .import-box-icon { background: #2e4861; color: #b4d4f1; }
@@ -640,6 +648,8 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .local-badge > span { background: #356c9c; box-shadow: 0 0 0 3px #e3edf6; }
 .avatar-button { border-color: #c5d2e0; background: #e4edf6; color: #214c77; }
 .sign-out-button:hover { background: #e6edf5; color: #1e456d; }
+.sign-in-sync-button { border-color: #9fb5ca; background: #f6f9fc; color: #1e4a72; }
+.sign-in-sync-button:hover { border-color: #7895b0; background: #e8f0f8; }
 .eyebrow-mark { background: #376b98; }
 .button-primary { border-color: #1e4a72; background: #1e4a72; }
 .button-primary:hover:not(:disabled) { border-color: #153652; background: #153652; }

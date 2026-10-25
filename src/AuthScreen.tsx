@@ -5,7 +5,7 @@ import ThemeToggle from "./ThemeToggle";
 
 type Mode = "sign-in" | "sign-up" | "forgot-password";
 
-export default function AuthScreen() {
+export default function AuthScreen({ onCancel }: { onCancel?: () => void }) {
   const auth = useAuth();
   const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState("");
@@ -74,6 +74,7 @@ export default function AuthScreen() {
       <div className="auth-switch">
         {auth.recoveryMode || mode === "forgot-password" ? <button onClick={() => { if (auth.recoveryMode) void auth.signOut().catch((reason) => setError(reason instanceof Error ? reason.message : "Could not exit password reset.")); setMode("sign-in"); setError(""); setNotice(""); }}><ArrowLeft size={14} /> Back to sign in</button> : mode === "sign-in" ? <span>New to Magazine Rack? <button onClick={() => { setMode("sign-up"); setError(""); setNotice(""); }}>Create an account</button></span> : <span>Already have an account? <button onClick={() => { setMode("sign-in"); setError(""); setNotice(""); }}>Sign in</button></span>}
       </div>
+      {onCancel && <button className="auth-local-back" onClick={onCancel}>Back to local library</button>}
       <p className="auth-privacy">Your catalog is private to your account. Downloaded PDFs remain on each device.</p>
     </section>
   </main>;
