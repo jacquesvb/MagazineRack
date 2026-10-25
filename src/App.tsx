@@ -5,14 +5,12 @@ import {
   FolderOpen, Grid2X2, LayoutList, LibraryBig, LoaderCircle, Plus,
   Search, Settings2, Sparkles, Trash2, Upload, X,
 } from "lucide-react";
-import { deleteCollection, deletePublication, getCollections, getPublications, initializeLocalCatalog, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath, syncUserCatalog } from "./db";
+import { deleteCollection, deletePublication, getCollections, getPublications, prepareLocalLibrary, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath } from "./localDb";
 import { archiveDownloadUrl, imageFileToDataUrl, imageUrlToDataUrl, importArchivePdf, type ArchiveFile } from "./archive";
 import { isTauri } from "@tauri-apps/api/core";
 import { downloadPublicationPdf, removeOfflinePdf } from "./offline";
 import { useUIStore } from "./store";
 import ThemeToggle from "./ThemeToggle";
-import { AuthProvider, useAuth } from "./auth";
-import AuthScreen from "./AuthScreen";
 import type { Collection, Publication, PublicationDraft } from "./types";
 
 const PdfReader = lazy(() => import("./PdfReader"));
@@ -20,7 +18,7 @@ const PdfReader = lazy(() => import("./PdfReader"));
 type Dialog = "new-collection" | "edit-collection" | "add-publication" | "edit-publication" | null;
 
 export default function App() {
-  return <AuthProvider><ThemeBridge><AppGate /></ThemeBridge></AuthProvider>;
+  return <ThemeBridge><AppGate /></ThemeBridge>;
 }
 
 function ThemeBridge({ children }: { children: React.ReactNode }) {
@@ -33,60 +31,15 @@ function ThemeBridge({ children }: { children: React.ReactNode }) {
 }
 
 function AppGate() {
-  const auth = useAuth();
-  const queryClient = useQueryClient();
-  const [showAuth, setShowAuth] = useState(false);
-  const [showSetup, setShowSetup] = useState(false);
-  const [useCachedCatalog, setUseCachedCatalog] = useState(false);
   const localCatalogQuery = useQuery({
-    queryKey: ["local-catalog-initialization"],
-    queryFn: initializeLocalCatalog,
+    queryKey: ["prepare-local-library"],
+    queryFn: prepareLocalLibrary,
     staleTime: Number.POSITIVE_INFINITY,
     retry: 1,
   });
-  const syncQuery = useQuery({
-    queryKey: ["account-catalog-sync", auth.user?.id],
-    queryFn: () => syncUserCatalog(auth.user!.id),
-    enabled: auth.configured && !!auth.user && localCatalogQuery.isSuccess,
-    retry: 1,
-    refetchInterval: auth.user ? 60_000 : false,
-  });
-
-  useEffect(() => {
-    if (auth.user) setShowAuth(false);
-  }, [auth.user?.id]);
-
-  useEffect(() => {
-    if (!auth.user || !syncQuery.isSuccess) return;
-    void queryClient.invalidateQueries({ queryKey: ["collections", auth.user.id] });
-    void queryClient.invalidateQueries({ queryKey: ["publications"] });
-  }, [auth.user, queryClient, syncQuery.dataUpdatedAt, syncQuery.isSuccess]);
-
-  if (localCatalogQuery.isLoading || auth.loading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Preparing your library…</span></div>;
-  if (localCatalogQuery.isError) return <div className="auth-loading"><div className="sync-error-card"><h2>Couldn’t open your local library</h2><p>{localCatalogQuery.error.message}</p><button className="button button-primary" onClick={() => void localCatalogQuery.refetch()}>Try again</button></div></div>;
-  if (auth.recoveryMode) return <AuthScreen onCancel={() => { void auth.signOut(); }} />;
-  if (!auth.user) {
-    if (showSetup) return <AccountSetupScreen onContinue={() => setShowSetup(false)} onBack={() => setShowSetup(false)} />;
-    if (showAuth && auth.configured) return <AuthScreen onCancel={() => setShowAuth(false)} />;
-    return <LibraryApp userId={null} username={null} signInLabel={auth.configured ? "Sign in to sync" : "Set up sync"} onSignIn={() => auth.configured ? setShowAuth(true) : setShowSetup(true)} />;
-  }
-  if (syncQuery.isLoading) return <div className="auth-loading"><LoaderCircle className="spin" size={26} /><span>Syncing your library…</span></div>;
-  // A failed background refresh must not unmount LibraryApp: doing so resets its
-  // selected collection. Only block on sync errors before the first successful sync.
-  if (syncQuery.isError && syncQuery.dataUpdatedAt === 0 && !useCachedCatalog) return <div className="auth-loading"><div className="sync-error-card"><h2>Couldn’t sync your library</h2><p>{syncQuery.error.message}</p><button className="button button-primary" onClick={() => void syncQuery.refetch()}>Try again</button><button className="text-button" onClick={() => setUseCachedCatalog(true)}>Open cached library while offline</button></div></div>;
-  const username = String(auth.user.user_metadata.username || auth.user.user_metadata.name || auth.user.email || "Reader");
-  return <LibraryApp userId={auth.user.id} username={username} />;
-}
-
-function AccountSetupScreen({ onContinue, onBack }: { onContinue: () => void; onBack: () => void }) {
-  return <main className="auth-screen"><section className="auth-card setup-card">
-    <div className="auth-topline"><div className="auth-brand"><div className="brand-mark"><BookOpen size={19} /></div><span>MAGAZINE RACK</span></div><ThemeToggle /></div>
-    <div className="auth-heading"><h1>Accounts need a Supabase project</h1><p>Set up Supabase Auth and the catalog schema to enable accounts and cross-device sync.</p></div>
-    <ol className="setup-steps"><li>Create a Supabase project.</li><li>Run <code>supabase/schema.sql</code> in the SQL editor.</li><li>Copy <code>.env.example</code> to <code>.env</code> and add the project URL and anon key.</li><li>Configure Google, Microsoft, email confirmation, and password reset redirects.</li></ol>
-    <button className="button button-primary auth-submit" onClick={onContinue}>Continue with this device only</button>
-    <button className="text-button setup-back" onClick={onBack}>Back to local library</button>
-    <p className="auth-privacy">Local mode keeps using this device’s SQLite catalog. Accounts stay unavailable until Supabase is configured.</p>
-  </section></main>;
+  if (localCatalogQuery.isLoading) return <div className="loading-state"><LoaderCircle className="spin" size={26} /><span>Preparing your local library…</span></div>;
+  if (localCatalogQuery.isError) return <div className="error-state"><h3>Couldn’t open your local library</h3><p>{localCatalogQuery.error.message}</p><button className="button button-primary" onClick={() => void localCatalogQuery.refetch()}>Try again</button></div>;
+  return <LibraryApp />;
 }
 
 function Cover({ image, title, className = "" }: { image?: string | null; title: string; className?: string }) {
@@ -244,11 +197,10 @@ function PublicationCard({ publication, isList, onOpen, onEdit, onDelete, delete
   </article>;
 }
 
-function LibraryApp({ userId, username, onSignIn, signInLabel }: { userId: string | null; username: string | null; onSignIn?: () => void; signInLabel?: string }) {
-  const auth = useAuth();
+function LibraryApp() {
   const queryClient = useQueryClient();
   const { viewMode, setViewMode } = useUIStore();
-  const preferenceKey = userId || "local";
+  const preferenceKey = "local";
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(() => localStorage.getItem(`magazine-rack-active-collection:${preferenceKey}`) || null);
   const [showCollections, setShowCollections] = useState(() => localStorage.getItem(`magazine-rack-show-collections:${preferenceKey}`) === "true");
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -279,8 +231,8 @@ function LibraryApp({ userId, username, onSignIn, signInLabel }: { userId: strin
     return () => window.removeEventListener("keydown", onShortcut);
   }, []);
 
-  const collectionsQuery = useQuery({ queryKey: ["collections", userId], queryFn: () => getCollections(userId) });
-  const publicationsQuery = useQuery({ queryKey: ["publications", selectedCollectionId, userId], queryFn: () => getPublications(selectedCollectionId, userId) });
+  const collectionsQuery = useQuery({ queryKey: ["collections"], queryFn: () => getCollections() });
+  const publicationsQuery = useQuery({ queryKey: ["publications", selectedCollectionId], queryFn: () => getPublications(selectedCollectionId) });
   const collections = collectionsQuery.data || [];
   const activeCollection = collections.find((collection) => collection.id === selectedCollectionId);
 
@@ -309,13 +261,13 @@ function LibraryApp({ userId, username, onSignIn, signInLabel }: { userId: strin
 
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["collections"] }); void queryClient.invalidateQueries({ queryKey: ["publications"] }); };
   const showMutationError = (error: Error) => setNotice(`Could not save changes: ${error.message}`);
-  const collectionSave = useMutation({ mutationFn: (data: Parameters<typeof saveCollection>[0]) => saveCollection(data, userId), onSuccess: () => { refresh(); setDialog(null); setEditingCollection(undefined); }, onError: showMutationError });
-  const collectionDelete = useMutation({ mutationFn: (id: string) => deleteCollection(id, userId), onSuccess: (_, id) => { if (selectedCollectionId === id) setSelectedCollectionId(null); refresh(); setNotice("Collection deleted."); }, onError: showMutationError });
-  const publicationSave = useMutation({ mutationFn: ({ draft, id, collectionId }: { draft: PublicationDraft; id?: string; collectionId: string | null }) => savePublication(draft, collectionId, id, userId), onSuccess: () => { refresh(); setDialog(null); setEditingPublication(undefined); setNotice("Publication saved to your rack."); }, onError: showMutationError });
+  const collectionSave = useMutation({ mutationFn: (data: Parameters<typeof saveCollection>[0]) => saveCollection(data), onSuccess: () => { refresh(); setDialog(null); setEditingCollection(undefined); }, onError: showMutationError });
+  const collectionDelete = useMutation({ mutationFn: (id: string) => deleteCollection(id), onSuccess: (_, id) => { if (selectedCollectionId === id) setSelectedCollectionId(null); refresh(); setNotice("Collection deleted."); }, onError: showMutationError });
+  const publicationSave = useMutation({ mutationFn: ({ draft, id, collectionId }: { draft: PublicationDraft; id?: string; collectionId: string | null }) => savePublication(draft, collectionId, id), onSuccess: () => { refresh(); setDialog(null); setEditingPublication(undefined); setNotice("Publication saved to your rack."); }, onError: showMutationError });
   const publicationDelete = useMutation({
     mutationFn: async ({ publicationId, collectionId, localPdfPath }: { publicationId: string; collectionId: string | null; localPdfPath: string | null }) => {
-      if (collectionId) return removePublicationFromCollection(publicationId, collectionId, userId);
-      await deletePublication(publicationId, userId);
+      if (collectionId) return removePublicationFromCollection(publicationId, collectionId);
+      await deletePublication(publicationId);
       if (localPdfPath) await removeOfflinePdf(localPdfPath).catch(() => undefined);
     },
     onSuccess: (_, variables) => { refresh(); setNotice(variables.collectionId ? "Publication removed from this collection." : "Publication deleted."); },
@@ -325,11 +277,11 @@ function LibraryApp({ userId, username, onSignIn, signInLabel }: { userId: strin
     mutationFn: async ({ publication, remove }: { publication: Publication; remove: boolean }) => {
       if (remove) {
         if (publication.local_pdf_path) await removeOfflinePdf(publication.local_pdf_path);
-        await setLocalPdfPath(publication.id, null, userId);
+        await setLocalPdfPath(publication.id, null);
         return;
       }
       const path = await downloadPublicationPdf(publication);
-      try { await setLocalPdfPath(publication.id, path, userId); }
+      try { await setLocalPdfPath(publication.id, path); }
       catch (error) { await removeOfflinePdf(path); throw error; }
     },
     onSuccess: (_, variables) => { refresh(); setNotice(variables.remove ? "Offline copy removed." : "Publication saved for offline reading."); },
@@ -353,11 +305,11 @@ function LibraryApp({ userId, username, onSignIn, signInLabel }: { userId: strin
         {!collections.length && <p className="sidebar-empty">Collections you create will show up here.</p>}
       </nav>
       <button className="new-collection-link" onClick={() => openCollectionDialog()}><Plus size={15} /> New collection</button>
-      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>{userId ? "Synced to your account." : "Cataloged locally on this device."}</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v0.8</span></div></div>
+      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v0.8</span></div></div>
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><ThemeToggle />{!userId && onSignIn && <button className="sign-in-sync-button" onClick={onSignIn}>{signInLabel || "Sign in to sync"}</button>}<div className="local-badge"><span /> {userId ? `Signed in as ${username}` : "Stored on this device"}</div>{userId && <button className="sign-out-button" onClick={() => void auth.signOut().catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Could not sign out."))}>Sign out</button>}<button className="avatar-button" title={username || "Local profile"}>{(username || "J").charAt(0).toUpperCase()}</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><ThemeToggle /><div className="local-badge"><span /> Local library</div></div></header>
       <div className="content-wrap">
         <section className="page-intro">
           <div className="intro-copy"><div className="eyebrow"><span className="eyebrow-mark" /> YOUR READING ROOM</div><h1>{showCollections ? "Your collections" : activeCollection?.name || "All publications"}</h1><p>{showCollections ? "A set of shelves for every corner of your archive." : activeCollection?.description || "A thoughtfully arranged home for the things you love to read."}</p></div>

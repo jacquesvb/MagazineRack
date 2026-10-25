@@ -7,8 +7,6 @@
     "core:default",
     "sql:default",
     "sql:allow-execute",
-    "deep-link:default",
-    "opener:default",
     "fs:default",
     { "identifier": "fs:allow-exists", "allow": [{ "path": "$APPLOCALDATA/pdfs" }, { "path": "$APPLOCALDATA/pdfs/**" }] },
     { "identifier": "fs:allow-read-file", "allow": [{ "path": "$APPLOCALDATA/pdfs" }, { "path": "$APPLOCALDATA/pdfs/**" }] },
