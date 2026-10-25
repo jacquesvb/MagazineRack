@@ -102,7 +102,7 @@ function CollectionDialog({ collection, onClose, onSave, busy }: { collection?: 
 function CollectionCard({ collection, isList, onOpen, onEdit, onDelete }: { collection: Collection; isList: boolean; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
   return <article className={`collection-card ${isList ? "collection-list-row" : ""}`}>
     <button className="collection-card-open" onClick={onOpen} aria-label={`Open ${collection.name}`}>
-      <Cover image={collection.thumbnail_data} title={collection.name} />
+      {!isList && <Cover image={collection.thumbnail_data} title={collection.name} />}
       <div className="collection-card-info"><span className="publication-date">COLLECTION</span><h3>{collection.name}</h3><p>{collection.description || "A collection in your reading room."}</p><span className="collection-card-count">{collection.publication_count || 0} {(collection.publication_count || 0) === 1 ? "publication" : "publications"}</span></div>
     </button>
     <div className="card-actions"><button className="icon-button" onClick={onEdit} title="Edit collection"><Settings2 size={16} /></button><button className="icon-button danger-hover" onClick={onDelete} title="Delete collection"><Trash2 size={16} /></button></div>
@@ -164,7 +164,7 @@ function PublicationCard({ publication, isList, onOpen, onEdit, onDelete, delete
 }) {
   return <article className={`publication-card ${isList ? "publication-list-row" : ""}`}>
     <button className="publication-open" onClick={onOpen} aria-label={`Read ${publication.title}`}>
-      <Cover image={publication.thumbnail_data} title={publication.title} />
+      {!isList && <Cover image={publication.thumbnail_data} title={publication.title} />}
       <div className="publication-info"><span className="publication-date">{publication.date || "DATE UNKNOWN"}</span><h3>{publication.title || "Untitled publication"}</h3><p>{publication.publisher || publication.creator || "Internet Archive"}</p><span className={`publication-link ${publication.local_pdf_path ? "offline-link" : ""}`}>{publication.local_pdf_path ? <><Check size={13} /> Saved for offline reading</> : <><BookOpen size={13} /> Read publication</>}</span></div>
     </button>
     <div className="card-actions"><button className="icon-button offline-action" onClick={onOfflineToggle} disabled={!desktopAvailable || offlinePending} title={!desktopAvailable ? "Offline downloads are available in the desktop app" : publication.local_pdf_path ? "Remove offline copy" : "Download for offline reading"} aria-label={publication.local_pdf_path ? "Remove offline copy" : "Download for offline reading"}>{offlinePending ? <LoaderCircle className="spin" size={16} /> : publication.local_pdf_path ? <Check size={16} /> : <Download size={16} />}</button><button className="icon-button" onClick={onEdit} title="Edit publication"><Settings2 size={16} /></button><button className="icon-button danger-hover" onClick={onDelete} title={deleteLabel}><Trash2 size={16} /></button></div>
@@ -267,7 +267,7 @@ export default function App() {
         {!collections.length && <p className="sidebar-empty">Collections you create will show up here.</p>}
       </nav>
       <button className="new-collection-link" onClick={() => openCollectionDialog()}><Plus size={15} /> New collection</button>
-      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v0.1.0</span></div></div>
+      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v0.8</span></div></div>
     </aside>
 
     <main className="main-area">

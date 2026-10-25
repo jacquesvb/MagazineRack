@@ -1,6 +1,6 @@
 [package]
 name = "magazine-rack"
-version = "0.1.0"
+version = "0.8.0"
 description = "A personal catalog for online magazines and PDFs"
 authors = ["Magazine Rack"]
 edition = "2021"
