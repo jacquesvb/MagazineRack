@@ -7,6 +7,7 @@ A desktop catalog for organizing and reading PDF publications hosted on Internet
 - Create collections with descriptions and custom image thumbnails.
 - Set a thumbnail by choosing an image file or dropping an HTTPS image from a browser page.
 - Import Archive.org metadata from an item page or a direct PDF URL.
+- Automatically use an Archive.org item's `__ia_thumb.jpg` as its cover when that image exists and is valid.
 - Edit publication details and use a custom JPG, PNG, GIF, or WebP cover image or the built-in fallback artwork.
 - Browse the catalog in tile or list view, search, and sort publications.
 - Switch between light and dark appearance; the preference is saved on the device.

@@ -51,6 +51,12 @@ export async function importArchivePdf(rawUrl: string): Promise<{ draft: Publica
   const selected = filename ? files.find((file) => file.name === filename) : files[0];
   if (!selected) throw new Error(filename ? "That PDF was not listed in the Archive.org item." : "No PDF file was found in this Archive.org item.");
   const metadata = record.metadata;
+  let thumbnailData: string | null = null;
+  try {
+    thumbnailData = await imageUrlToDataUrl(archiveDownloadUrl(identifier, "__ia_thumb.jpg"));
+  } catch {
+    // Archive.org items do not always have a generated thumbnail; the UI uses its default cover.
+  }
   const draft: PublicationDraft = {
     archive_identifier: identifier,
     pdf_filename: selected.name,
@@ -64,7 +70,7 @@ export async function importArchivePdf(rawUrl: string): Promise<{ draft: Publica
     rights: firstValue(metadata.rights),
     subjects: values(metadata.subject),
     metadata_json: JSON.stringify(metadata),
-    thumbnail_data: null,
+    thumbnail_data: thumbnailData,
   };
   return { draft, pdfFiles: files };
 }
@@ -112,7 +118,13 @@ export async function imageUrlToDataUrl(rawUrl: string): Promise<string> {
   for (let index = 0; index < bytes.length; index += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(index, Math.min(index + 0x8000, bytes.length)));
   }
-  return `data:${mimeType};base64,${btoa(binary)}`;
+  const dataUrl = `data:${mimeType};base64,${btoa(binary)}`;
+  const image = new Image();
+  image.src = dataUrl;
+  try { await image.decode(); }
+  catch { throw new Error("The dropped image file is invalid or could not be decoded."); }
+  if (!image.naturalWidth || !image.naturalHeight) throw new Error("The dropped image file is invalid.");
+  return dataUrl;
 }
 
 export function imageFileToDataUrl(file: File): Promise<string> {
