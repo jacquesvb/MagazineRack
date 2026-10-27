@@ -5,13 +5,15 @@ A desktop catalog for organizing and reading PDF publications hosted on Internet
 ## Features
 
 - Create collections with descriptions and custom image thumbnails.
+- Export a collection as a shareable JSON file and import it into another Magazine Rack library.
 - Set a thumbnail by choosing an image file or dropping an HTTPS image from a browser page.
 - Import Archive.org metadata from an item page or a direct PDF URL.
 - Automatically use an Archive.org item's `__ia_thumb.jpg` as its cover when that image exists and is valid.
 - Edit publication details and use a custom JPG, PNG, GIF, or WebP cover image or the built-in fallback artwork.
 - Browse the catalog in tile or list view, search, and sort publications.
 - Switch between light and dark appearance; the preference is saved on the device.
-- Read PDFs in an in-app PDF.js reader and save them to the app's local data directory for offline reading.
+- Read PDFs in an in-app PDF.js reader and save selected collection publications for offline reading.
+- Choose a storage folder; saved PDFs are organized into folders named after their collections.
 - Store the complete catalog locally in SQLite. No account, cloud service, or API credentials are required.
 
 ## Requirements
@@ -53,7 +55,9 @@ To run the app in development mode instead, use `npm run tauri dev`.
 
 ### Data and privacy
 
-Collections, publication metadata, and thumbnails are stored in SQLite on the user's computer. PDFs remain on Archive.org unless the user downloads an offline copy, which is also stored locally. On first launch, any cached account catalog is migrated to the local library and legacy pre-account catalog data is cleared. The app does not send catalog data to a service. Previously stored data in a Supabase project is not deleted automatically; it can be removed separately from that project's dashboard.
+Collections, publication metadata, and thumbnails are stored in SQLite on the user's computer. PDFs remain on Archive.org unless the user saves them for offline reading; those copies are stored under the folder the user chooses, inside a folder for each collection. On first launch, any cached account catalog is migrated to the local library and legacy pre-account catalog data is cleared. The app does not send catalog data to a service. Previously stored data in a Supabase project is not deleted automatically; it can be removed separately from that project's dashboard.
+
+Use **Export collection** on a collection page to create a `.magazinerack.json` file containing the collection details, publication metadata, and covers. In the desktop app, the export is saved beside that collection's offline PDFs; in browser preview, it is downloaded by the browser. Share the file with another user, who can choose **Import collection** next to Export. Import merges into an existing collection with the same name and skips publications already in that collection. Matching publications elsewhere in the library are linked without replacing their saved details. PDF files and offline copies are not included.
 
 To run the frontend in a browser for UI development only:
 
@@ -61,7 +65,7 @@ To run the frontend in a browser for UI development only:
 npm run dev
 ```
 
-Browser preview data is saved in that browser's local storage; offline PDF downloads are available in the packaged Tauri desktop app. Use the download icon on a publication tile or row to save a PDF. The reader automatically uses a saved copy, and removing that copy does not remove the Archive.org publication from your catalog.
+Browser preview data is saved in that browser's local storage; choosing a download folder and saving PDFs are available in the packaged Tauri desktop app. Open a collection, select publications, and choose **Save selected**. The reader automatically uses saved copies, and removing a saved copy does not remove the Archive.org publication from your catalog.
 
 ## Archive.org metadata
 

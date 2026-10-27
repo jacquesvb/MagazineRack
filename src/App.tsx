@@ -5,10 +5,13 @@ import {
   FolderOpen, Grid2X2, LayoutList, LibraryBig, LoaderCircle, Plus,
   Search, Settings2, Sparkles, Trash2, Upload, X,
 } from "lucide-react";
-import { deleteCollection, deletePublication, getCollections, getPublications, prepareLocalLibrary, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath } from "./localDb";
+import { deleteCollection, deletePublication, getCollections, getPublications, importSharedCollection, prepareLocalLibrary, removePublicationFromCollection, saveCollection, savePublication, setLocalPdfPath } from "./localDb";
 import { archiveDownloadUrl, imageFileToDataUrl, imageUrlToDataUrl, importArchivePdf, type ArchiveFile } from "./archive";
-import { isTauri } from "@tauri-apps/api/core";
-import { downloadPublicationPdf, removeOfflinePdf } from "./offline";
+import { createSharedCollection, downloadSharedCollection, parseSharedCollection, sharedCollectionFilename } from "./collectionTransfer";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { open as openNativeDialog } from "@tauri-apps/plugin-dialog";
+import { mkdir, writeFile } from "@tauri-apps/plugin-fs";
+import { collectionPdfFolderPath, downloadPublicationPdf, removeOfflinePdf } from "./offline";
 import { useUIStore } from "./store";
 import ThemeToggle from "./ThemeToggle";
 import type { Collection, Publication, PublicationDraft } from "./types";
@@ -16,6 +19,8 @@ import type { Collection, Publication, PublicationDraft } from "./types";
 const PdfReader = lazy(() => import("./PdfReader"));
 
 type Dialog = "new-collection" | "edit-collection" | "add-publication" | "edit-publication" | null;
+const DOWNLOAD_ROOT_KEY = "magazine-rack-download-root-v1";
+const DOWNLOAD_ROOTS_KEY = "magazine-rack-download-roots-v1";
 
 export default function App() {
   return <ThemeBridge><AppGate /></ThemeBridge>;
@@ -184,16 +189,17 @@ function PublicationDialog({ initial, collections, collectionId, onCollectionCha
   </Modal>;
 }
 
-function PublicationCard({ publication, isList, onOpen, onEdit, onDelete, deleteLabel, onOfflineToggle, offlinePending, desktopAvailable }: {
+function PublicationCard({ publication, isList, onOpen, onEdit, onDelete, deleteLabel, onRemoveOffline, offlinePending, selectable, selected, onSelect }: {
   publication: Publication; isList: boolean; onOpen: () => void; onEdit: () => void; onDelete: () => void; deleteLabel: string;
-  onOfflineToggle: () => void; offlinePending: boolean; desktopAvailable: boolean;
+  onRemoveOffline?: () => void; offlinePending: boolean; selectable: boolean; selected: boolean; onSelect: () => void;
 }) {
-  return <article className={`publication-card ${isList ? "publication-list-row" : ""}`}>
-    <button className="publication-open" onClick={onOpen} aria-label={`Read ${publication.title}`}>
+  return <article className={`publication-card ${isList ? "publication-list-row" : ""} ${selectable ? "has-selection-control" : ""}`}>
+    <button className="publication-open" onClick={onOpen} aria-label={selectable ? `${selected ? "Deselect" : "Select"} ${publication.title}` : `Read ${publication.title}`}>
       {!isList && <Cover image={publication.thumbnail_data} title={publication.title} />}
       <div className="publication-info"><span className="publication-date">{publication.date || "DATE UNKNOWN"}</span><h3>{publication.title || "Untitled publication"}</h3><p>{publication.publisher || publication.creator || "Internet Archive"}</p><span className={`publication-link ${publication.local_pdf_path ? "offline-link" : ""}`}>{publication.local_pdf_path ? <><Check size={13} /> Saved for offline reading</> : <><BookOpen size={13} /> Read publication</>}</span></div>
     </button>
-    <div className="card-actions"><button className="icon-button offline-action" onClick={onOfflineToggle} disabled={!desktopAvailable || offlinePending} title={!desktopAvailable ? "Offline downloads are available in the desktop app" : publication.local_pdf_path ? "Remove offline copy" : "Download for offline reading"} aria-label={publication.local_pdf_path ? "Remove offline copy" : "Download for offline reading"}>{offlinePending ? <LoaderCircle className="spin" size={16} /> : publication.local_pdf_path ? <Check size={16} /> : <Download size={16} />}</button><button className="icon-button" onClick={onEdit} title="Edit publication"><Settings2 size={16} /></button><button className="icon-button danger-hover" onClick={onDelete} title={deleteLabel}><Trash2 size={16} /></button></div>
+    {selectable && <button className={`publication-select ${selected ? "is-selected" : ""}`} onClick={onSelect} aria-pressed={selected} aria-label={`${selected ? "Deselect" : "Select"} ${publication.title}`} title={selected ? "Deselect publication" : "Select publication"}>{selected && <Check size={15} strokeWidth={2.5} />}</button>}
+    <div className="card-actions">{publication.local_pdf_path && onRemoveOffline && <button className="icon-button offline-action" onClick={onRemoveOffline} disabled={offlinePending} title="Remove saved copy" aria-label="Remove saved copy">{offlinePending ? <LoaderCircle className="spin" size={16} /> : <X size={16} />}</button>}<button className="icon-button" onClick={onEdit} title="Edit publication"><Settings2 size={16} /></button><button className="icon-button danger-hover" onClick={onDelete} title={deleteLabel}><Trash2 size={16} /></button></div>
   </article>;
 }
 
@@ -209,10 +215,14 @@ function LibraryApp() {
   const [reading, setReading] = useState<Publication | undefined>();
   const [search, setSearch] = useState("");
   const [sortOpen, setSortOpen] = useState(false);
-  const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "title">("newest");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "title">("oldest");
   const [notice, setNotice] = useState("");
   const [addTargetCollectionId, setAddTargetCollectionId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedPublicationIds, setSelectedPublicationIds] = useState<Set<string>>(() => new Set());
+  const [downloadRoot, setDownloadRoot] = useState(() => localStorage.getItem(DOWNLOAD_ROOT_KEY) || "");
   const searchInput = useRef<HTMLInputElement>(null);
+  const collectionImportInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -246,6 +256,18 @@ function LibraryApp() {
       setSelectedCollectionId(null);
     }
   }, [collections, collectionsQuery.isSuccess, selectedCollectionId]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(DOWNLOAD_ROOTS_KEY) || "[]") as unknown;
+      const roots = Array.isArray(stored) ? stored.filter((path): path is string => typeof path === "string") : [];
+      for (const path of roots) void invoke<string>("allow_download_directory", { path }).catch(() => undefined);
+    } catch { /* Ignore invalid old folder preferences. */ }
+  }, []);
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedPublicationIds(new Set());
+  }, [selectedCollectionId, showCollections]);
   const publications = useMemo(() => {
     const filtered = (publicationsQuery.data || []).filter((publication) => {
       const term = search.toLowerCase().trim();
@@ -262,6 +284,17 @@ function LibraryApp() {
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["collections"] }); void queryClient.invalidateQueries({ queryKey: ["publications"] }); };
   const showMutationError = (error: Error) => setNotice(`Could not save changes: ${error.message}`);
   const collectionSave = useMutation({ mutationFn: (data: Parameters<typeof saveCollection>[0]) => saveCollection(data), onSuccess: () => { refresh(); setDialog(null); setEditingCollection(undefined); }, onError: showMutationError });
+  const collectionImport = useMutation({
+    mutationFn: importSharedCollection,
+    onSuccess: ({ collectionId, imported, alreadyHad, skipped, merged }) => {
+      refresh();
+      setSelectedCollectionId(collectionId);
+      setShowCollections(false);
+      const added = imported + alreadyHad;
+      setNotice(`${merged ? "Merged into existing collection" : "Collection imported"}: ${added} ${added === 1 ? "publication" : "publications"} added${skipped ? `, ${skipped} already in the collection` : ""}.`);
+    },
+    onError: (error: Error) => setNotice(`Could not import collection: ${error.message}`),
+  });
   const collectionDelete = useMutation({ mutationFn: (id: string) => deleteCollection(id), onSuccess: (_, id) => { if (selectedCollectionId === id) setSelectedCollectionId(null); refresh(); setNotice("Collection deleted."); }, onError: showMutationError });
   const publicationSave = useMutation({ mutationFn: ({ draft, id, collectionId }: { draft: PublicationDraft; id?: string; collectionId: string | null }) => savePublication(draft, collectionId, id), onSuccess: () => { refresh(); setDialog(null); setEditingPublication(undefined); setNotice("Publication saved to your rack."); }, onError: showMutationError });
   const publicationDelete = useMutation({
@@ -273,23 +306,121 @@ function LibraryApp() {
     onSuccess: (_, variables) => { refresh(); setNotice(variables.collectionId ? "Publication removed from this collection." : "Publication deleted."); },
     onError: showMutationError,
   });
-  const offlineMutation = useMutation({
-    mutationFn: async ({ publication, remove }: { publication: Publication; remove: boolean }) => {
-      if (remove) {
-        if (publication.local_pdf_path) await removeOfflinePdf(publication.local_pdf_path);
-        await setLocalPdfPath(publication.id, null);
-        return;
-      }
-      const path = await downloadPublicationPdf(publication);
-      try { await setLocalPdfPath(publication.id, path); }
-      catch (error) { await removeOfflinePdf(path); throw error; }
+  const offlineRemoveMutation = useMutation({
+    mutationFn: async (publication: Publication) => {
+      if (publication.local_pdf_path) await removeOfflinePdf(publication.local_pdf_path);
+      await setLocalPdfPath(publication.id, null);
     },
-    onSuccess: (_, variables) => { refresh(); setNotice(variables.remove ? "Offline copy removed." : "Publication saved for offline reading."); },
+    onSuccess: () => { refresh(); setNotice("Saved copy removed."); },
+    onError: showMutationError,
+  });
+  const bulkOfflineMutation = useMutation({
+    mutationFn: async ({ publications: selected, collection, root }: { publications: Publication[]; collection: Collection; root: string }) => {
+      let saved = 0;
+      let alreadySaved = 0;
+      const failures: string[] = [];
+      const folder = collectionPdfFolderPath(root, collection.name).replace(/\\/g, "/").toLowerCase();
+      for (const publication of selected) {
+        const currentPath = publication.local_pdf_path?.replace(/\\/g, "/").toLowerCase();
+        if (currentPath?.startsWith(`${folder}/`)) { alreadySaved += 1; continue; }
+        try {
+          const path = await downloadPublicationPdf(publication, collection.name, root);
+          await setLocalPdfPath(publication.id, path);
+          if (publication.local_pdf_path && publication.local_pdf_path !== path) await removeOfflinePdf(publication.local_pdf_path).catch(() => undefined);
+          saved += 1;
+        } catch (error) {
+          failures.push(`${publication.title}: ${error instanceof Error ? error.message : "Download failed."}`);
+        }
+      }
+      return { saved, alreadySaved, failures };
+    },
+    onSuccess: ({ saved, alreadySaved, failures }) => {
+      refresh();
+      setSelectionMode(false);
+      setSelectedPublicationIds(new Set());
+      setNotice(`${saved} publication${saved === 1 ? "" : "s"} saved${alreadySaved ? `; ${alreadySaved} already saved in this collection` : ""}${failures.length ? `; ${failures.length} failed (${failures[0]})` : "."}`);
+    },
     onError: showMutationError,
   });
 
   const openCollectionDialog = (collection?: Collection) => { setEditingCollection(collection); setDialog(collection ? "edit-collection" : "new-collection"); };
   const openPublicationDialog = (publication?: Publication) => { setEditingPublication(publication); setAddTargetCollectionId(selectedCollectionId || collections[0]?.id || null); setDialog(publication ? "edit-publication" : "add-publication"); };
+  const chooseDownloadLocation = async (): Promise<string | null> => {
+    if (!isTauri()) { setNotice("Choose a storage folder from the desktop app."); return null; }
+    try {
+      const chosen = await openNativeDialog({ directory: true, multiple: false, title: "Choose a folder for saved publications" });
+      if (typeof chosen !== "string") return null;
+      const canonicalPath = await invoke<string>("allow_download_directory", { path: chosen });
+      setDownloadRoot(canonicalPath);
+      localStorage.setItem(DOWNLOAD_ROOT_KEY, canonicalPath);
+      const storedRoots = JSON.parse(localStorage.getItem(DOWNLOAD_ROOTS_KEY) || "[]") as unknown;
+      const roots = Array.isArray(storedRoots) ? storedRoots.filter((path): path is string => typeof path === "string") : [];
+      if (!roots.includes(canonicalPath)) localStorage.setItem(DOWNLOAD_ROOTS_KEY, JSON.stringify([...roots, canonicalPath]));
+      return canonicalPath;
+    } catch (error) {
+      setNotice(`Could not use that folder: ${error instanceof Error ? error.message : "Folder access was denied."}`);
+      return null;
+    }
+  };
+  const togglePublicationSelection = (id: string) => setSelectedPublicationIds((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleVisibleSelection = () => {
+    const visibleIds = publications.map((publication) => publication.id);
+    const allSelected = visibleIds.every((id) => selectedPublicationIds.has(id));
+    setSelectedPublicationIds((current) => {
+      const next = new Set(current);
+      for (const id of visibleIds) allSelected ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const saveSelectedPublications = async () => {
+    if (!activeCollection) return;
+    const selected = (publicationsQuery.data || []).filter((publication) => selectedPublicationIds.has(publication.id));
+    if (!selected.length) return;
+    const chosenRoot = downloadRoot || await chooseDownloadLocation();
+    if (!chosenRoot) return;
+    try {
+      const root = await invoke<string>("allow_download_directory", { path: chosenRoot });
+      bulkOfflineMutation.mutate({ publications: selected, collection: activeCollection, root });
+    } catch (error) {
+      setNotice(`Could not access the storage folder: ${error instanceof Error ? error.message : "Folder access was denied."}`);
+    }
+  };
+  const exportCollection = async (collection: Collection) => {
+    try {
+      const members = await getPublications(collection.id);
+      const shared = createSharedCollection(collection, members);
+      if (isTauri()) {
+        const root = downloadRoot || await chooseDownloadLocation();
+        if (!root) return;
+        const allowedRoot = await invoke<string>("allow_download_directory", { path: root });
+        const allowedFolder = collectionPdfFolderPath(allowedRoot, collection.name);
+        await mkdir(allowedFolder, { recursive: true });
+        const filePath = `${allowedFolder}/${sharedCollectionFilename(shared)}`;
+        await writeFile(filePath, new TextEncoder().encode(JSON.stringify(shared, null, 2)));
+        setNotice(`Collection export saved to ${filePath}`);
+      } else {
+        downloadSharedCollection(shared);
+        setNotice(`“${collection.name}” exported as a shareable collection file.`);
+      }
+    } catch (error) {
+      setNotice(`Could not export collection: ${error instanceof Error ? error.message : "Could not read collection."}`);
+    }
+  };
+  const importCollectionFile = async (file?: File) => {
+    if (!file) return;
+    try {
+      const shared = parseSharedCollection(await file.text());
+      collectionImport.mutate(shared);
+    } catch (error) {
+      setNotice(`Could not import collection: ${error instanceof Error ? error.message : "Invalid collection file."}`);
+    } finally {
+      if (collectionImportInput.current) collectionImportInput.current.value = "";
+    }
+  };
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -305,15 +436,15 @@ function LibraryApp() {
         {!collections.length && <p className="sidebar-empty">Collections you create will show up here.</p>}
       </nav>
       <button className="new-collection-link" onClick={() => openCollectionDialog()}><Plus size={15} /> New collection</button>
-      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v0.8</span></div></div>
+      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v1.0.0</span></div></div>
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><ThemeToggle /><div className="local-badge"><span /> Local library</div></div></header>
+      <header className="topbar"><div className="breadcrumb"><span>Library</span><span className="breadcrumb-slash">/</span><strong>{showCollections ? "Collections" : activeCollection?.name || "All publications"}</strong></div><div className="topbar-right"><ThemeToggle /></div></header>
       <div className="content-wrap">
         <section className="page-intro">
           <div className="intro-copy"><div className="eyebrow"><span className="eyebrow-mark" /> YOUR READING ROOM</div><h1>{showCollections ? "Your collections" : activeCollection?.name || "All publications"}</h1><p>{showCollections ? "A set of shelves for every corner of your archive." : activeCollection?.description || "A thoughtfully arranged home for the things you love to read."}</p></div>
-          {activeCollection && <div className="intro-actions"><button className="button button-quiet" onClick={() => openCollectionDialog(activeCollection)}><Settings2 size={15} /> Edit collection</button><button className="icon-button collection-delete" onClick={() => { if (window.confirm(`Delete “${activeCollection.name}”? Publications remain in All publications.`)) collectionDelete.mutate(activeCollection.id); }} title="Delete collection"><Trash2 size={16} /></button></div>}
+          {activeCollection && <div className="intro-actions"><button className="button button-quiet" onClick={() => void exportCollection(activeCollection)}><Upload size={15} /> Export collection</button><input ref={collectionImportInput} className="visually-hidden" type="file" accept=".json,application/json" onChange={(event) => void importCollectionFile(event.target.files?.[0])} /><button className="button button-quiet" onClick={() => collectionImportInput.current?.click()} disabled={collectionImport.isPending}>{collectionImport.isPending ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />} Import collection</button><button className="button button-quiet" onClick={() => openCollectionDialog(activeCollection)}><Settings2 size={15} /> Edit collection</button><button className="icon-button collection-delete" onClick={() => { if (window.confirm(`Delete “${activeCollection.name}”? Publications remain in All publications.`)) collectionDelete.mutate(activeCollection.id); }} title="Delete collection"><Trash2 size={16} /></button></div>}
         </section>
         <section className="library-toolbar">
           <div className="results-count"><strong>{showCollections ? visibleCollections.length : publications.length}</strong> {showCollections ? (visibleCollections.length === 1 ? "collection" : "collections") : (publications.length === 1 ? "publication" : "publications")}{search && <span> matching “{search}”</span>}</div>
@@ -324,11 +455,29 @@ function LibraryApp() {
             <button className="button button-primary add-publication-button" onClick={() => showCollections ? openCollectionDialog() : openPublicationDialog()}><Plus size={16} /> {showCollections ? "New collection" : "Add publication"}</button>
           </div>
         </section>
+        {!showCollections && activeCollection && <section className="collection-tools">
+          <div className="collection-tool-actions">
+            {!selectionMode ? <button className="button button-quiet" onClick={() => setSelectionMode(true)}><Check size={15} /> Select publications</button> : <>
+              <span className="selection-count">{selectedPublicationIds.size} selected</span>
+              <button className="button button-quiet" onClick={toggleVisibleSelection}>{publications.length > 0 && publications.every((publication) => selectedPublicationIds.has(publication.id)) ? "Deselect visible" : "Select visible"}</button>
+              <button className="button button-quiet" onClick={() => setSelectedPublicationIds(new Set())} disabled={!selectedPublicationIds.size}>Clear</button>
+              <button className="button button-primary" onClick={() => void saveSelectedPublications()} disabled={!isTauri() || !selectedPublicationIds.size || bulkOfflineMutation.isPending} title={!isTauri() ? "Saving publications is available in the desktop app" : undefined}>
+                {bulkOfflineMutation.isPending ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}
+                {bulkOfflineMutation.isPending ? "Saving…" : `Save selected${selectedPublicationIds.size ? ` (${selectedPublicationIds.size})` : ""}`}
+              </button>
+              <button className="button button-quiet" onClick={() => { setSelectionMode(false); setSelectedPublicationIds(new Set()); }}>Done</button>
+            </>}
+          </div>
+          <button className="button button-quiet storage-location-button" onClick={() => void chooseDownloadLocation()} title={downloadRoot || "Choose where collection PDFs are stored"}>
+            <FolderOpen size={15} /> {downloadRoot ? `Folder: ${downloadRoot.split(/[\\/]/).filter(Boolean).pop() || downloadRoot}` : "Choose storage folder"}
+          </button>
+          {!isTauri() && <small className="form-hint">PDF saving is available in the desktop app.</small>}
+        </section>}
 
         {showCollections ? visibleCollections.length ? <section className={`collection-grid ${viewMode === "list" ? "collection-list-view" : ""}`}>
           {visibleCollections.map((collection) => <CollectionCard key={collection.id} collection={collection} isList={viewMode === "list"} onOpen={() => { setSelectedCollectionId(collection.id); setShowCollections(false); }} onEdit={() => openCollectionDialog(collection)} onDelete={() => { if (window.confirm(`Delete “${collection.name}”? Publications remain in All publications.`)) collectionDelete.mutate(collection.id); }} />)}
         </section> : <div className="empty-state"><div className="empty-art"><div className="empty-sun" /><div className="empty-book empty-book-a" /><div className="empty-book empty-book-b" /><div className="empty-book empty-book-c" /><div className="empty-table" /></div><span className="eyebrow">A SHELF WITH ROOM TO GROW</span><h2>{search ? "No collections found" : "Create your first collection"}</h2><p>{search ? "Try another collection name or clear your search." : "Collections give your Archive.org publications a place of their own."}</p><div className="empty-actions">{search ? <button className="button button-quiet" onClick={() => setSearch("")}>Clear search</button> : <button className="button button-primary" onClick={() => openCollectionDialog()}><Plus size={16} /> Create collection</button>}</div></div> : publicationsQuery.isLoading ? <div className="loading-state"><LoaderCircle className="spin" size={25} /><span>Opening your library…</span></div> : publicationsQuery.isError ? <div className="error-state"><h3>Couldn’t load your library</h3><p>{publicationsQuery.error.message}</p><button className="button button-quiet" onClick={() => void publicationsQuery.refetch()}>Try again</button></div> : publications.length ? <section className={`publication-grid ${viewMode === "list" ? "list-view" : ""}`}>
-          {publications.map((publication) => <PublicationCard key={publication.id} publication={publication} isList={viewMode === "list"} onOpen={() => setReading(publication)} onEdit={() => openPublicationDialog(publication)} onOfflineToggle={() => offlineMutation.mutate({ publication, remove: !!publication.local_pdf_path })} offlinePending={offlineMutation.isPending && offlineMutation.variables?.publication.id === publication.id} desktopAvailable={isTauri()} deleteLabel={selectedCollectionId ? "Remove from collection" : "Delete publication"} onDelete={() => {
+          {publications.map((publication) => <PublicationCard key={publication.id} publication={publication} isList={viewMode === "list"} onOpen={() => selectionMode ? togglePublicationSelection(publication.id) : setReading(publication)} onEdit={() => openPublicationDialog(publication)} onRemoveOffline={selectedCollectionId && publication.local_pdf_path ? () => offlineRemoveMutation.mutate(publication) : undefined} offlinePending={offlineRemoveMutation.isPending && offlineRemoveMutation.variables?.id === publication.id} selectable={selectionMode && !!selectedCollectionId} selected={selectedPublicationIds.has(publication.id)} onSelect={() => togglePublicationSelection(publication.id)} deleteLabel={selectedCollectionId ? "Remove from collection" : "Delete publication"} onDelete={() => {
             const action = selectedCollectionId ? `Remove “${publication.title}” from this collection?` : `Delete “${publication.title}” from your library?`;
             if (window.confirm(action)) publicationDelete.mutate({ publicationId: publication.id, collectionId: selectedCollectionId, localPdfPath: publication.local_pdf_path });
           }} />)}

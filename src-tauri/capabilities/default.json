@@ -8,6 +8,7 @@
     "sql:default",
     "sql:allow-execute",
     "fs:default",
+    "dialog:default",
     { "identifier": "fs:allow-exists", "allow": [{ "path": "$APPLOCALDATA/pdfs" }, { "path": "$APPLOCALDATA/pdfs/**" }] },
     { "identifier": "fs:allow-read-file", "allow": [{ "path": "$APPLOCALDATA/pdfs" }, { "path": "$APPLOCALDATA/pdfs/**" }] },
     { "identifier": "fs:allow-write-file", "allow": [{ "path": "$APPLOCALDATA/pdfs" }, { "path": "$APPLOCALDATA/pdfs/**" }] },

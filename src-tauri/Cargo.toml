@@ -1,6 +1,6 @@
 [package]
 name = "magazine-rack"
-version = "0.8.0"
+version = "1.0.0"
 description = "A personal catalog for online magazines and PDFs"
 authors = ["Magazine Rack"]
 edition = "2021"
@@ -17,4 +17,5 @@ tauri = { version = "2", features = [] }
 serde_json = "1"
 tauri-plugin-http = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }

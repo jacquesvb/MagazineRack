@@ -83,6 +83,7 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .button-quiet:hover:not(:disabled) { border-color: #cdd5cc; background: #f3f5f0; color: #304d3e; }
 .button-dark { border-color: #354d42; background: #354d42; color: white; }
 .button-dark:hover:not(:disabled) { background: #263c32; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 
 .library-toolbar { display: flex; min-height: 57px; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid #e9eae4; border-bottom: 1px solid #e9eae4; }
 .results-count { color: #929992; font-size: 10px; white-space: nowrap; }
@@ -127,6 +128,16 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .publication-link.offline-link { color: #4f7958; }
 .card-actions { position: absolute; top: 7px; right: 7px; display: flex; gap: 2px; padding: 2px; border: 1px solid #ffffff70; border-radius: 7px; background: #ffffffde; opacity: 0; transition: opacity .15s; }
 .publication-card:hover .card-actions, .publication-card:focus-within .card-actions { opacity: 1; }
+.publication-select { position: absolute; z-index: 2; top: 10px; left: 10px; display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid #aebdcb; border-radius: 7px; background: #fffffff2; color: #fff; cursor: pointer; box-shadow: 0 1px 5px #14283a30; }
+.publication-select:hover { border-color: #285b8a; }
+.publication-select.is-selected { border-color: #1e4a72; background: #1e4a72; }
+.publication-list-row.has-selection-control .publication-select { top: 50%; left: 12px; transform: translateY(-50%); }
+.publication-list-row.has-selection-control .publication-open { padding-left: 50px; }
+.collection-tools { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e9eae4; }
+.collection-tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.collection-tool-actions .button, .collection-tools > .button { min-height: 32px; }
+.selection-count { color: #45524a; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.storage-location-button { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
 
 .collection-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 19px 16px; padding-top: 25px; }
 .collection-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid #e8e9e3; border-radius: 8px; background: #fff; transition: transform .18s, box-shadow .18s, border-color .18s; }
@@ -306,6 +317,8 @@ button:disabled { cursor: not-allowed; opacity: .68; }
   .card-actions { opacity: 1; }
   .card-actions .icon-button { width: 26px; height: 26px; }
   .publication-list-row .publication-open { padding: 11px 93px 11px 11px; }
+  .publication-list-row.has-selection-control .publication-open { padding-left: 44px; }
+  .publication-list-row.has-selection-control .publication-select { left: 8px; }
   .publication-list-row .publication-info { gap: 4px; }
   .publication-list-row .publication-info h3 { font-size: 15px; }
   .publication-list-row .card-actions { right: 7px; }
@@ -317,6 +330,8 @@ button:disabled { cursor: not-allowed; opacity: .68; }
   .collection-list-row .card-actions { margin-left: 4px; }
   .content-footer { gap: 12px; font-size: 8px; }
   .content-footer span:last-child { text-align: right; }
+  .collection-tools { align-items: flex-start; flex-direction: column; padding: 10px 0; }
+  .storage-location-button { max-width: 100%; }
   .form-grid { grid-template-columns: 1fr; }
   .field-span { grid-column: auto; }
   .import-box { padding: 9px; }
@@ -474,6 +489,10 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 :root[data-theme="dark"] .publication-link.offline-link,
 :root[data-theme="dark"] .collection-card-count { color: #9cc7ee; }
 :root[data-theme="dark"] .card-actions { border-color: #4b5e70; background: #263746f2; }
+:root[data-theme="dark"] .publication-select { border-color: #667b8f; background: #1c2b39f2; }
+:root[data-theme="dark"] .publication-select.is-selected { border-color: #3975a8; background: #316b9d; color: #fff; }
+:root[data-theme="dark"] .selection-count { color: #e1e9f1; }
+:root[data-theme="dark"] .collection-tools { border-color: #344454; }
 :root[data-theme="dark"] .icon-button { color: #c1ccd7; }
 :root[data-theme="dark"] .icon-button:hover { background: #32485c; color: #fff; }
 :root[data-theme="dark"] .card-actions .offline-action { color: #9bc6ed; }

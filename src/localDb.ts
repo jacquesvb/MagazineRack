@@ -2,6 +2,7 @@ import Database from "@tauri-apps/plugin-sql";
 import { isTauri } from "@tauri-apps/api/core";
 import { removeOfflinePdf } from "./offline";
 import type { Collection, Publication, PublicationDraft } from "./types";
+import type { SharedCollection } from "./collectionTransfer";
 
 type LocalData = { collections: Collection[]; publications: Publication[]; links: Record<string, string[]> };
 type LegacyIds = { collections: string[]; publications: string[] };
@@ -118,6 +119,55 @@ export async function saveCollection(input: { id?: string; name: string; descrip
       [id, input.name, input.description, input.thumbnail_data, timestamp]);
   }
   return id;
+}
+
+export async function importSharedCollection(shared: SharedCollection): Promise<{ collectionId: string; imported: number; alreadyHad: number; skipped: number; merged: boolean }> {
+  const existingCollection = (await getCollections()).find((collection) =>
+    collection.name.trim().toLocaleLowerCase() === shared.collection.name.trim().toLocaleLowerCase());
+  const collectionId = existingCollection?.id || await saveCollection(shared.collection);
+  const existingPublications = await getPublications();
+  const knownPublications = new Map<string, Pick<Publication, "id">>(existingPublications.map((publication) =>
+    [`${publication.archive_identifier}\u0000${publication.pdf_filename}`, publication]));
+  const memberKeys = new Set((await getPublications(collectionId)).map((publication) =>
+    `${publication.archive_identifier}\u0000${publication.pdf_filename}`));
+  let imported = 0;
+  let alreadyHad = 0;
+  let skipped = 0;
+  for (const draft of shared.publications) {
+    const key = `${draft.archive_identifier}\u0000${draft.pdf_filename}`;
+    if (memberKeys.has(key)) {
+      skipped += 1;
+      continue;
+    }
+    const existing = knownPublications.get(key);
+    if (existing) {
+      await addPublicationToCollection(existing.id, collectionId);
+      alreadyHad += 1;
+    } else {
+      const id = await savePublication(draft, collectionId);
+      knownPublications.set(key, { id });
+      imported += 1;
+    }
+    memberKeys.add(key);
+  }
+  return { collectionId, imported, alreadyHad, skipped, merged: !!existingCollection };
+}
+
+async function addPublicationToCollection(publicationId: string, collectionId: string): Promise<void> {
+  const timestamp = now();
+  if (!isTauri()) {
+    const data = readLocal();
+    const links = data.links[collectionId] || (data.links[collectionId] = []);
+    if (!links.includes(publicationId)) links.push(publicationId);
+    saveLocal(data);
+    return;
+  }
+  const conn = await db();
+  const linked = await conn.select<Array<{ publication_id: string }>>(
+    "SELECT publication_id FROM collection_publications WHERE collection_id=$1 AND publication_id=$2", [collectionId, publicationId]);
+  if (!linked.length) {
+    await conn.execute("INSERT INTO collection_publications (collection_id,publication_id,position,added_at) VALUES ($1,$2,COALESCE((SELECT MAX(position)+1 FROM collection_publications WHERE collection_id=$1),0),$3)", [collectionId, publicationId, timestamp]);
+  }
 }
 
 export async function deleteCollection(id: string, userId?: string | null): Promise<void> {
