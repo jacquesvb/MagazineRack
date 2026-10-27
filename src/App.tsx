@@ -221,6 +221,8 @@ function LibraryApp() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedPublicationIds, setSelectedPublicationIds] = useState<Set<string>>(() => new Set());
   const [downloadRoot, setDownloadRoot] = useState(() => localStorage.getItem(DOWNLOAD_ROOT_KEY) || "");
+  const [offlineProgress, setOfflineProgress] = useState("");
+  const [offlineSaveErrors, setOfflineSaveErrors] = useState<string[]>([]);
   const searchInput = useRef<HTMLInputElement>(null);
   const collectionImportInput = useRef<HTMLInputElement>(null);
 
@@ -267,6 +269,8 @@ function LibraryApp() {
   useEffect(() => {
     setSelectionMode(false);
     setSelectedPublicationIds(new Set());
+    setOfflineSaveErrors([]);
+    setOfflineProgress("");
   }, [selectedCollectionId, showCollections]);
   const publications = useMemo(() => {
     const filtered = (publicationsQuery.data || []).filter((publication) => {
@@ -323,24 +327,39 @@ function LibraryApp() {
       for (const publication of selected) {
         const currentPath = publication.local_pdf_path?.replace(/\\/g, "/").toLowerCase();
         if (currentPath?.startsWith(`${folder}/`)) { alreadySaved += 1; continue; }
+        setOfflineProgress(publication.title);
         try {
           const path = await downloadPublicationPdf(publication, collection.name, root);
-          await setLocalPdfPath(publication.id, path);
+          try {
+            await setLocalPdfPath(publication.id, path);
+          } catch (error) {
+            await removeOfflinePdf(path).catch(() => undefined);
+            throw new Error(`The PDF was written, but Magazine Rack could not update its library record: ${error instanceof Error ? error.message : String(error)}`);
+          }
           if (publication.local_pdf_path && publication.local_pdf_path !== path) await removeOfflinePdf(publication.local_pdf_path).catch(() => undefined);
           saved += 1;
         } catch (error) {
           failures.push(`${publication.title}: ${error instanceof Error ? error.message : "Download failed."}`);
         }
       }
+      setOfflineProgress("");
       return { saved, alreadySaved, failures };
     },
+    onMutate: () => setOfflineSaveErrors([]),
     onSuccess: ({ saved, alreadySaved, failures }) => {
       refresh();
       setSelectionMode(false);
       setSelectedPublicationIds(new Set());
-      setNotice(`${saved} publication${saved === 1 ? "" : "s"} saved${alreadySaved ? `; ${alreadySaved} already saved in this collection` : ""}${failures.length ? `; ${failures.length} failed (${failures[0]})` : "."}`);
+      setOfflineSaveErrors(failures);
+      setNotice(failures.length
+        ? `${saved} saved, ${failures.length} failed. See the collection for details.`
+        : `${saved} publication${saved === 1 ? "" : "s"} saved${alreadySaved ? `; ${alreadySaved} already saved in this collection` : ""}.`);
     },
-    onError: showMutationError,
+    onError: (error: Error) => {
+      setOfflineProgress("");
+      setOfflineSaveErrors([error.message]);
+      setNotice(`Could not save selected publications: ${error.message}`);
+    },
   });
 
   const openCollectionDialog = (collection?: Collection) => { setEditingCollection(collection); setDialog(collection ? "edit-collection" : "new-collection"); };
@@ -358,7 +377,9 @@ function LibraryApp() {
       if (!roots.includes(canonicalPath)) localStorage.setItem(DOWNLOAD_ROOTS_KEY, JSON.stringify([...roots, canonicalPath]));
       return canonicalPath;
     } catch (error) {
-      setNotice(`Could not use that folder: ${error instanceof Error ? error.message : "Folder access was denied."}`);
+      const detail = `Could not use that folder: ${error instanceof Error ? error.message : "Folder access was denied."}`;
+      setOfflineSaveErrors([detail]);
+      setNotice(detail);
       return null;
     }
   };
@@ -386,7 +407,9 @@ function LibraryApp() {
       const root = await invoke<string>("allow_download_directory", { path: chosenRoot });
       bulkOfflineMutation.mutate({ publications: selected, collection: activeCollection, root });
     } catch (error) {
-      setNotice(`Could not access the storage folder: ${error instanceof Error ? error.message : "Folder access was denied."}`);
+      const detail = `Could not access the storage folder: ${error instanceof Error ? error.message : "Folder access was denied."}`;
+      setOfflineSaveErrors([detail]);
+      setNotice(detail);
     }
   };
   const exportCollection = async (collection: Collection) => {
@@ -465,6 +488,7 @@ function LibraryApp() {
                 {bulkOfflineMutation.isPending ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}
                 {bulkOfflineMutation.isPending ? "Saving…" : `Save selected${selectedPublicationIds.size ? ` (${selectedPublicationIds.size})` : ""}`}
               </button>
+              {offlineProgress && <span className="offline-progress" role="status">Saving “{offlineProgress}”…</span>}
               <button className="button button-quiet" onClick={() => { setSelectionMode(false); setSelectedPublicationIds(new Set()); }}>Done</button>
             </>}
           </div>
@@ -473,6 +497,7 @@ function LibraryApp() {
           </button>
           {!isTauri() && <small className="form-hint">PDF saving is available in the desktop app.</small>}
         </section>}
+        {offlineSaveErrors.length > 0 && <div className="offline-save-errors" role="alert"><div className="offline-save-errors-heading"><strong>Some publications could not be saved.</strong><button className="text-button" onClick={() => setOfflineSaveErrors([])}>Dismiss</button></div><ul>{offlineSaveErrors.map((error, index) => <li key={`${index}-${error}`}>{error}</li>)}</ul></div>}
 
         {showCollections ? visibleCollections.length ? <section className={`collection-grid ${viewMode === "list" ? "collection-list-view" : ""}`}>
           {visibleCollections.map((collection) => <CollectionCard key={collection.id} collection={collection} isList={viewMode === "list"} onOpen={() => { setSelectedCollectionId(collection.id); setShowCollections(false); }} onEdit={() => openCollectionDialog(collection)} onDelete={() => { if (window.confirm(`Delete “${collection.name}”? Publications remain in All publications.`)) collectionDelete.mutate(collection.id); }} />)}

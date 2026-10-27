@@ -138,6 +138,11 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .collection-tool-actions .button, .collection-tools > .button { min-height: 32px; }
 .selection-count { color: #45524a; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .storage-location-button { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
+.offline-progress { max-width: 260px; overflow: hidden; color: #566270; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.offline-save-errors { margin: 13px 0 0; padding: 11px 13px; border: 1px solid #d8a9a1; border-radius: 7px; background: #fff5f2; color: #743e37; font-size: 10px; line-height: 1.5; }
+.offline-save-errors-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.offline-save-errors ul { display: grid; gap: 4px; max-height: 170px; overflow: auto; margin: 7px 0 0; padding-left: 17px; }
+.offline-save-errors li { overflow-wrap: anywhere; }
 
 .collection-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 19px 16px; padding-top: 25px; }
 .collection-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid #e8e9e3; border-radius: 8px; background: #fff; transition: transform .18s, box-shadow .18s, border-color .18s; }
@@ -268,7 +273,7 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .pdf-canvas { max-width: 100%; height: auto; background: #fff; box-shadow: 0 6px 24px #0006; }
 .reader-message { display: flex; min-height: 210px; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #c4cdc5; font-size: 11px; }
 .reader-error { color: #e2b4a8; }
-.reader-error p { margin: 0; }
+.reader-error p { max-width: min(780px, 90vw); margin: 0; overflow-wrap: anywhere; text-align: center; }
 .reader-error a { display: flex; align-items: center; gap: 6px; color: #c6d8c5; text-decoration: none; }
 
 @media (max-width: 1120px) {
@@ -493,6 +498,8 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 :root[data-theme="dark"] .publication-select.is-selected { border-color: #3975a8; background: #316b9d; color: #fff; }
 :root[data-theme="dark"] .selection-count { color: #e1e9f1; }
 :root[data-theme="dark"] .collection-tools { border-color: #344454; }
+:root[data-theme="dark"] .offline-progress { color: #b1bfce; }
+:root[data-theme="dark"] .offline-save-errors { border-color: #784a48; background: #3a282b; color: #ffc2b7; }
 :root[data-theme="dark"] .icon-button { color: #c1ccd7; }
 :root[data-theme="dark"] .icon-button:hover { background: #32485c; color: #fff; }
 :root[data-theme="dark"] .card-actions .offline-action { color: #9bc6ed; }

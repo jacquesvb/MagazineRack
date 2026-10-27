@@ -256,7 +256,8 @@ export async function setLocalPdfPath(publicationId: string, path: string | null
     return;
   }
   const conn = await db(userId);
-  await conn.execute("UPDATE publications SET local_pdf_path=$1 WHERE id=$2", [path, publicationId]);
+  const result = await conn.execute("UPDATE publications SET local_pdf_path=$1 WHERE id=$2", [path, publicationId]);
+  if (!result.rowsAffected) throw new Error("Publication was not found in the local catalog; the saved PDF was not linked to it.");
 }
 
 export async function removePublicationFromCollection(publicationId: string, collectionId: string, userId?: string | null): Promise<void> {

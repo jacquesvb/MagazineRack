@@ -25,7 +25,10 @@ export default function PdfReader({ publication, onClose }: { publication: Publi
     setPageNumber(1);
     setPageCount(0);
     (publication.local_pdf_path ? readOfflinePdf(publication.local_pdf_path) : downloadArchivePdf(publication.source_url))
-      .then((data) => pdfjs.getDocument({ data }).promise)
+      .then((data) => {
+        if (!data.byteLength) throw new Error("The PDF file is empty.");
+        return pdfjs.getDocument({ data }).promise;
+      })
       .then((document) => {
         if (!active) { void document.destroy(); return; }
         pdfRef.current = document;
@@ -34,9 +37,10 @@ export default function PdfReader({ publication, onClose }: { publication: Publi
       })
       .catch((reason: unknown) => {
         if (active) {
+          const detail = reason instanceof Error ? reason.message : String(reason);
           setError(publication.local_pdf_path
-            ? "The saved PDF could not be read. Remove its offline copy and download it again."
-            : reason instanceof Error ? reason.message : "The PDF could not be opened.");
+            ? `Could not load the saved PDF at “${publication.local_pdf_path}”: ${detail}. Remove the saved copy and save it again.`
+            : `Could not load the PDF from Archive.org: ${detail}`);
           setLoading(false);
         }
       });
