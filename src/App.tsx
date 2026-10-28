@@ -425,8 +425,15 @@ function LibraryApp() {
   };
   const exportCollection = async (collection: Collection) => {
     try {
-      const members = await getPublications(collection.id);
+      const [members, latestCollections] = await Promise.all([getPublications(collection.id), getCollections()]);
+      const expectedCount = latestCollections.find((item) => item.id === collection.id)?.publication_count ?? collection.publication_count;
+      if (expectedCount !== undefined && members.length !== expectedCount) {
+        throw new Error(`The collection lists ${expectedCount} publications, but only ${members.length} could be loaded. No incomplete export was created.`);
+      }
       const shared = createSharedCollection(collection, members);
+      if (shared.publications.length !== members.length) {
+        throw new Error(`Only ${shared.publications.length} of ${members.length} collection publications were prepared for export.`);
+      }
       if (isTauri()) {
         const root = downloadRoot || await chooseDownloadLocation();
         if (!root) return;
@@ -435,10 +442,10 @@ function LibraryApp() {
         await mkdir(allowedFolder, { recursive: true });
         const filePath = `${allowedFolder}/${sharedCollectionFilename(shared)}`;
         await writeFile(filePath, new TextEncoder().encode(JSON.stringify(shared, null, 2)));
-        setNotice(`Collection export saved to ${filePath}`);
+        setNotice(`Exported “${collection.name}” with ${members.length} publication${members.length === 1 ? "" : "s"} to ${filePath}`);
       } else {
         downloadSharedCollection(shared);
-        setNotice(`“${collection.name}” exported as a shareable collection file.`);
+        setNotice(`Exported “${collection.name}” with ${members.length} publication${members.length === 1 ? "" : "s"}.`);
       }
     } catch (error) {
       setNotice(`Could not export collection: ${error instanceof Error ? error.message : "Could not read collection."}`);
