@@ -142,9 +142,9 @@ function CollectionCard({ collection, isList, onOpen, onEdit, onDelete }: { coll
 
 const emptyDraft = (): PublicationDraft => ({ archive_identifier: "", pdf_filename: "", source_url: "", title: "", date: "", publisher: "", creator: "", description: "", language: "", rights: "", subjects: [], metadata_json: "{}", thumbnail_data: null });
 
-function PublicationDialog({ initial, collections, collectionId, onCollectionChange, onClose, onSave, busy }: {
+function PublicationDialog({ initial, collections, collectionId, onCollectionChange, onCreateCollection, onClose, onSave, busy }: {
   initial?: Publication; collections: Collection[]; collectionId: string | null; onCollectionChange: (id: string) => void;
-  onClose: () => void; onSave: (draft: PublicationDraft) => void; busy: boolean;
+  onCreateCollection: () => void; onClose: () => void; onSave: (draft: PublicationDraft) => void; busy: boolean;
 }) {
   const [url, setUrl] = useState(initial?.source_url || "");
   const [draft, setDraft] = useState<PublicationDraft>(() => initial ? { ...initial, subjects: initial.subjects || [] } : emptyDraft());
@@ -163,7 +163,7 @@ function PublicationDialog({ initial, collections, collectionId, onCollectionCha
 
   return <Modal title={initial ? "Edit publication" : "Add a publication"} subtitle={initial ? "Adjust the catalog details for this issue." : "Paste an Archive.org item or direct PDF link to get started."} onClose={onClose} wide>
     <form className="modal-form" onSubmit={(event) => { event.preventDefault(); if (!initial && !collectionId) { setError("Choose a collection before adding this publication."); return; } if (!draft.title.trim()) { setError("Publication title is required."); return; } onSave(draft); }}>
-      {!initial && <label className="field target-collection-field"><span>Add to collection <b>*</b></span><select value={collectionId || ""} onChange={(event) => onCollectionChange(event.target.value)}><option value="" disabled>Select a collection</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}</select></label>}
+      {!initial && <label className="field target-collection-field"><span>Add to collection <b>*</b></span><select value={collectionId || ""} onChange={(event) => event.target.value === "__create_collection__" ? onCreateCollection() : onCollectionChange(event.target.value)}><option value="" disabled>Select a collection</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}<option value="__create_collection__">＋ Create a collection…</option></select></label>}
       {!initial && <div className="import-box">
         <div className="import-box-icon"><Archive size={19} /></div>
         <div className="import-box-body"><label className="field"><span>Archive.org URL</span><div className="import-input-row"><input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://archive.org/details/…" /><button type="button" className="button button-dark" onClick={() => void fetchMetadata()} disabled={!url.trim() || loading}>{loading ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={15} />} Fetch details</button></div></label><p className="helper-line"><CircleHelp size={13} /> Metadata is imported from Archive.org and can be edited before saving.</p></div>
@@ -210,6 +210,7 @@ function LibraryApp() {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(() => localStorage.getItem(`magazine-rack-active-collection:${preferenceKey}`) || null);
   const [showCollections, setShowCollections] = useState(() => localStorage.getItem(`magazine-rack-show-collections:${preferenceKey}`) === "true");
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [quickCollectionDialogOpen, setQuickCollectionDialogOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState<Collection | undefined>();
   const [editingPublication, setEditingPublication] = useState<Publication | undefined>();
   const [reading, setReading] = useState<Publication | undefined>();
@@ -288,6 +289,16 @@ function LibraryApp() {
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["collections"] }); void queryClient.invalidateQueries({ queryKey: ["publications"] }); };
   const showMutationError = (error: Error) => setNotice(`Could not save changes: ${error.message}`);
   const collectionSave = useMutation({ mutationFn: (data: Parameters<typeof saveCollection>[0]) => saveCollection(data), onSuccess: () => { refresh(); setDialog(null); setEditingCollection(undefined); }, onError: showMutationError });
+  const quickCollectionSave = useMutation({
+    mutationFn: (data: Parameters<typeof saveCollection>[0]) => saveCollection(data),
+    onSuccess: (id) => {
+      refresh();
+      setAddTargetCollectionId(id);
+      setQuickCollectionDialogOpen(false);
+      setNotice("Collection created and selected for this publication.");
+    },
+    onError: showMutationError,
+  });
   const collectionImport = useMutation({
     mutationFn: importSharedCollection,
     onSuccess: ({ collectionId, imported, alreadyHad, skipped, merged }) => {
@@ -459,7 +470,7 @@ function LibraryApp() {
         {!collections.length && <p className="sidebar-empty">Collections you create will show up here.</p>}
       </nav>
       <button className="new-collection-link" onClick={() => openCollectionDialog()}><Plus size={15} /> New collection</button>
-      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v1.0.0</span></div></div>
+      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v1.1.0</span></div></div>
     </aside>
 
     <main className="main-area">
@@ -512,7 +523,8 @@ function LibraryApp() {
     </main>
 
     {dialog === "new-collection" || dialog === "edit-collection" ? <CollectionDialog collection={editingCollection} onClose={() => setDialog(null)} busy={collectionSave.isPending} onSave={(data) => collectionSave.mutate(data)} /> : null}
-    {dialog === "add-publication" || dialog === "edit-publication" ? <PublicationDialog initial={editingPublication} collections={collections} collectionId={editingPublication ? selectedCollectionId : addTargetCollectionId} onCollectionChange={setAddTargetCollectionId} onClose={() => { setDialog(null); setEditingPublication(undefined); }} busy={publicationSave.isPending} onSave={(draft) => publicationSave.mutate({ draft, id: editingPublication?.id, collectionId: editingPublication ? selectedCollectionId : addTargetCollectionId })} /> : null}
+    {dialog === "add-publication" || dialog === "edit-publication" ? <PublicationDialog initial={editingPublication} collections={collections} collectionId={editingPublication ? selectedCollectionId : addTargetCollectionId} onCollectionChange={setAddTargetCollectionId} onCreateCollection={() => setQuickCollectionDialogOpen(true)} onClose={() => { setDialog(null); setEditingPublication(undefined); }} busy={publicationSave.isPending} onSave={(draft) => publicationSave.mutate({ draft, id: editingPublication?.id, collectionId: editingPublication ? selectedCollectionId : addTargetCollectionId })} /> : null}
+    {quickCollectionDialogOpen && <CollectionDialog onClose={() => setQuickCollectionDialogOpen(false)} busy={quickCollectionSave.isPending} onSave={(data) => quickCollectionSave.mutate(data)} />}
     {reading && <Suspense fallback={<div className="reader-backdrop"><div className="reader-message"><LoaderCircle className="spin" size={28} /><span>Preparing reader…</span></div></div>}><PdfReader publication={reading} onClose={() => setReading(undefined)} /></Suspense>}
     {notice && <div className="toast"><Check size={16} />{notice}<button onClick={() => setNotice("")} aria-label="Dismiss"><X size={14} /></button></div>}
   </div>;
