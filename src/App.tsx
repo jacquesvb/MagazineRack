@@ -477,7 +477,7 @@ function LibraryApp() {
         {!collections.length && <p className="sidebar-empty">Collections you create will show up here.</p>}
       </nav>
       <button className="new-collection-link" onClick={() => openCollectionDialog()}><Plus size={15} /> New collection</button>
-      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v1.1.0</span></div></div>
+      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v1.2.0</span></div></div>
     </aside>
 
     <main className="main-area">
@@ -487,6 +487,7 @@ function LibraryApp() {
           <div className="intro-copy"><div className="eyebrow"><span className="eyebrow-mark" /> YOUR READING ROOM</div><h1>{showCollections ? "Your collections" : activeCollection?.name || "All publications"}</h1><p>{showCollections ? "A set of shelves for every corner of your archive." : activeCollection?.description || "A thoughtfully arranged home for the things you love to read."}</p></div>
           {activeCollection && <div className="intro-actions"><button className="button button-quiet" onClick={() => void exportCollection(activeCollection)}><Upload size={15} /> Export collection</button><input ref={collectionImportInput} className="visually-hidden" type="file" accept=".json,application/json" onChange={(event) => void importCollectionFile(event.target.files?.[0])} /><button className="button button-quiet" onClick={() => collectionImportInput.current?.click()} disabled={collectionImport.isPending}>{collectionImport.isPending ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />} Import collection</button><button className="button button-quiet" onClick={() => openCollectionDialog(activeCollection)}><Settings2 size={15} /> Edit collection</button><button className="icon-button collection-delete" onClick={() => { if (window.confirm(`Delete “${activeCollection.name}”? Publications remain in All publications.`)) collectionDelete.mutate(activeCollection.id); }} title="Delete collection"><Trash2 size={16} /></button></div>}
         </section>
+        <div className="sticky-controls">
         <section className="library-toolbar">
           <div className="results-count"><strong>{showCollections ? visibleCollections.length : publications.length}</strong> {showCollections ? (visibleCollections.length === 1 ? "collection" : "collections") : (publications.length === 1 ? "publication" : "publications")}{search && <span> matching “{search}”</span>}</div>
           <div className="toolbar-actions"><label className="search-box"><Search size={16} /><input ref={searchInput} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={showCollections ? "Search collections" : "Search your library"} /><kbd>⌘ K</kbd></label>
@@ -515,6 +516,7 @@ function LibraryApp() {
           </button>
           {!isTauri() && <small className="form-hint">PDF saving is available in the desktop app.</small>}
         </section>}
+        </div>
         {offlineSaveErrors.length > 0 && <div className="offline-save-errors" role="alert"><div className="offline-save-errors-heading"><strong>Some publications could not be saved.</strong><button className="text-button" onClick={() => setOfflineSaveErrors([])}>Dismiss</button></div><ul>{offlineSaveErrors.map((error, index) => <li key={`${index}-${error}`}>{error}</li>)}</ul></div>}
 
         {showCollections ? visibleCollections.length ? <section className={`collection-grid ${viewMode === "list" ? "collection-list-view" : ""}`}>

@@ -85,6 +85,7 @@ button:disabled { cursor: not-allowed; opacity: .68; }
 .button-dark:hover:not(:disabled) { background: #263c32; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 
+.sticky-controls { position: sticky; top: 0; z-index: 5; background: var(--paper); box-shadow: 0 6px 10px -10px #1c273288; }
 .library-toolbar { display: flex; min-height: 57px; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid #e9eae4; border-bottom: 1px solid #e9eae4; }
 .results-count { color: #929992; font-size: 10px; white-space: nowrap; }
 .results-count strong { color: #45524a; font-size: 11px; }
