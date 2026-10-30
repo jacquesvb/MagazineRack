@@ -399,12 +399,12 @@ function LibraryApp() {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const toggleVisibleSelection = () => {
-    const visibleIds = publications.map((publication) => publication.id);
-    const allSelected = visibleIds.every((id) => selectedPublicationIds.has(id));
+  const toggleAllCollectionSelection = () => {
+    const collectionIds = (publicationsQuery.data || []).map((publication) => publication.id);
+    const allSelected = collectionIds.length > 0 && collectionIds.every((id) => selectedPublicationIds.has(id));
     setSelectedPublicationIds((current) => {
       const next = new Set(current);
-      for (const id of visibleIds) allSelected ? next.delete(id) : next.add(id);
+      for (const id of collectionIds) allSelected ? next.delete(id) : next.add(id);
       return next;
     });
   };
@@ -477,7 +477,7 @@ function LibraryApp() {
         {!collections.length && <p className="sidebar-empty">Collections you create will show up here.</p>}
       </nav>
       <button className="new-collection-link" onClick={() => openCollectionDialog()}><Plus size={15} /> New collection</button>
-      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v1.2.0</span></div></div>
+      <div className="sidebar-bottom"><div className="storage-note"><div className="storage-icon"><BookOpen size={16} /></div><p><strong>Your library, your way</strong><span>Cataloged locally on this device.</span></p></div><div className="sidebar-footer"><span>MAGAZINE RACK</span><span>v1.3.0</span></div></div>
     </aside>
 
     <main className="main-area">
@@ -501,7 +501,7 @@ function LibraryApp() {
           <div className="collection-tool-actions">
             {!selectionMode ? <button className="button button-quiet" onClick={() => setSelectionMode(true)}><Check size={15} /> Select publications</button> : <>
               <span className="selection-count">{selectedPublicationIds.size} selected</span>
-              <button className="button button-quiet" onClick={toggleVisibleSelection}>{publications.length > 0 && publications.every((publication) => selectedPublicationIds.has(publication.id)) ? "Deselect visible" : "Select visible"}</button>
+              <button className="button button-quiet" onClick={toggleAllCollectionSelection} disabled={!publicationsQuery.data?.length}>{publicationsQuery.data && publicationsQuery.data.length > 0 && publicationsQuery.data.every((publication) => selectedPublicationIds.has(publication.id)) ? "Deselect All" : "Select All"}</button>
               <button className="button button-quiet" onClick={() => setSelectedPublicationIds(new Set())} disabled={!selectedPublicationIds.size}>Clear</button>
               <button className="button button-primary" onClick={() => void saveSelectedPublications()} disabled={!isTauri() || !selectedPublicationIds.size || bulkOfflineMutation.isPending} title={!isTauri() ? "Saving publications is available in the desktop app" : undefined}>
                 {bulkOfflineMutation.isPending ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}
