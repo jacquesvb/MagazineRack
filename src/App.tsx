@@ -502,7 +502,6 @@ function LibraryApp() {
             {!selectionMode ? <button className="button button-quiet" onClick={() => setSelectionMode(true)}><Check size={15} /> Select publications</button> : <>
               <span className="selection-count">{selectedPublicationIds.size} selected</span>
               <button className="button button-quiet" onClick={toggleAllCollectionSelection} disabled={!publicationsQuery.data?.length}>{publicationsQuery.data && publicationsQuery.data.length > 0 && publicationsQuery.data.every((publication) => selectedPublicationIds.has(publication.id)) ? "Deselect All" : "Select All"}</button>
-              <button className="button button-quiet" onClick={() => setSelectedPublicationIds(new Set())} disabled={!selectedPublicationIds.size}>Clear</button>
               <button className="button button-primary" onClick={() => void saveSelectedPublications()} disabled={!isTauri() || !selectedPublicationIds.size || bulkOfflineMutation.isPending} title={!isTauri() ? "Saving publications is available in the desktop app" : undefined}>
                 {bulkOfflineMutation.isPending ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}
                 {bulkOfflineMutation.isPending ? "Saving…" : `Save selected${selectedPublicationIds.size ? ` (${selectedPublicationIds.size})` : ""}`}
